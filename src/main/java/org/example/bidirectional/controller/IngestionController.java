@@ -32,33 +32,54 @@ public class IngestionController {
     }
 
     @PostMapping("/to-file")
-    public ResponseEntity<String> ingestToFile(@RequestBody IngestRequest request) {
+    public ResponseEntity<byte[]> ingestToFile(@RequestBody IngestRequest request) {
         try {
+            // 1. Setup ClickHouse service using user-supplied config
             ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            Path path = Files.createTempFile(request.getTableName() + "_output", ".csv");
-            ingestionService.ingestDataToFile(request.getTableName(), request.getColumns(), path);
-            return ResponseEntity.ok("Data written to: " + path.toAbsolutePath());
+            // 2. Create a temporary CSV file
+            Path tempFile = Files.createTempFile(request.getTableName() + "_export", ".csv");
+
+            // 3. Write ClickHouse data into the file
+            ingestionService.ingestDataToFile(request.getTableName(), request.getColumns(), tempFile);
+
+            // 4. Read file content into byte array
+            byte[] fileContent = Files.readAllBytes(tempFile);
+
+            // 5. Send as downloadable file
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=" + tempFile.getFileName().toString())
+                    .header("Content-Type", "text/csv")
+                    .body(fileContent);
+
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
+            String errMsg = "Error generating CSV: " + e.getMessage();
+            return ResponseEntity.internalServerError().body(errMsg.getBytes());
         }
     }
 
-    @PostMapping("/from-file")
-    public ResponseEntity<String> ingestFromFile(@RequestParam("file") MultipartFile file,
-                                                 @RequestParam String tableName,
-                                                 @RequestBody ClickHouseProperties props) {
+    @PostMapping(value = "/from-file", consumes = {"multipart/form-data"})
+    public ResponseEntity<String> ingestFromFile(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam("tableName") String tableName,
+            @RequestPart("config") ClickHouseProperties props
+    ) {
         try {
+            // 1. Write uploaded CSV to temp path
+            Path path = Files.createTempFile("upload_", ".csv");
+            Files.write(path, file.getBytes());
+
+            // 2. Create ClickHouse client and ingestion service
             ClickHouseService clickHouseService = new ClickHouseService(props);
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            Path path = Files.createTempFile("upload_", ".csv");
-            Files.write(path, file.getBytes());
+            // 3. Ingest file into ClickHouse
             ingestionService.ingestDataFromFile(tableName, path);
-            return ResponseEntity.ok("File data ingested into table: " + tableName);
+
+            return ResponseEntity.ok("✅ File data ingested into ClickHouse table: " + tableName);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("❌ Error ingesting file: " + e.getMessage());
         }
     }
 }
