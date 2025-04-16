@@ -11,6 +11,7 @@ import org.example.bidirectional.config.ClickHouseProperties;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -19,7 +20,7 @@ import java.util.stream.Collectors;
 @Service
 public class ClickHouseService {
     private final Client client;
-    private final char delimiter;
+    protected final char delimiter;
 
     public ClickHouseService(ClickHouseProperties props) {
         this.delimiter = props.getDelimiter().charAt(0);
@@ -95,6 +96,7 @@ public class ClickHouseService {
 
             // Skip the header row
             csvReader.readNext();
+
             // Return all subsequent rows as a List<String[]>
             return csvReader.readAll();
         }
@@ -133,6 +135,6 @@ public class ClickHouseService {
      * Interface to define custom row processing logic.
      */
     public interface DataProcessor {
-        void process(String[] row);
+        void process(String[] row) throws IOException;
     }
 }

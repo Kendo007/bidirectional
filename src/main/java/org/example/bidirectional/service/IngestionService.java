@@ -28,88 +28,110 @@ public class IngestionService {
      * @param tableName  The table name.
      * @param columns    The columns to fetch.
      * @param outputPath The output file path.
-     * @param delimiter  The custom delimiter.
-     * @throws Exception if an error occurs during the process.
      */
-    public void ingestDataToFile(String tableName, List<String> columns, Path outputPath, char delimiter) throws Exception {
-        clickHouseService.fetchDataAndProcess(tableName, columns, row -> {
-            try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-                // Create a CSVWriter instance directly
-                CSVWriter csvWriter = new CSVWriter(writer,
-                        delimiter,
-                        CSVWriter.NO_QUOTE_CHARACTER,
-                        CSVWriter.DEFAULT_ESCAPE_CHARACTER,
-                        CSVWriter.DEFAULT_LINE_END);
+    public void ingestDataToFile(String tableName, List<String> columns, Path outputPath) {
+        // Create a CSVWriter instance directly
+        try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
 
-                // Write header if the file is empty
-                if (Files.size(outputPath) == 0) {
-                    csvWriter.writeNext(columns.toArray(new String[0]));
-                }
+            CSVWriter csvWriter = new CSVWriter(writer,
+                    clickHouseService.delimiter,
+                    CSVWriter.NO_QUOTE_CHARACTER,
+                    CSVWriter.DEFAULT_ESCAPE_CHARACTER,
+                    CSVWriter.DEFAULT_LINE_END);
 
-                // Write the current row to CSV
-                csvWriter.writeNext(row);
-                csvWriter.flush();
-                csvWriter.close();
-            } catch (IOException e) {
-                throw new RuntimeException("Error writing row to CSV file", e);
+            clickHouseService.fetchDataAndProcess(tableName, columns, row -> {
+                    // Write the current row to CSV
+                    csvWriter.writeNext(row);
+                    csvWriter.flush();
             }
-        });
+            );
+
+            csvWriter.close();
+        } catch (Exception e) {
+            throw new RuntimeException("Error writing row to CSV file", e);
+        }
     }
 
-
     /**
-     * Ingest data from a CSV file into ClickHouse.
+     * Ingests data from a CSV file into a ClickHouse table.
+     * Generates a single INSERT statement that batches multiple rows.
      *
-     * @param tableName  The table name.
-     * @param inputPath  The CSV input file path.
-     * @param delimiter  The custom delimiter.
-     * @throws Exception if an error occurs during the process.
+     * @param tableName the target table name
+     * @param inputPath the CSV file path
+     * @throws Exception if an error occurs during reading or data ingestion
      */
-    public void ingestDataFromFile(String tableName, Path inputPath, char delimiter) throws Exception {
-        // Prepare a SQL insert query template (use placeholders for parameters)
-        String sqlTemplate = "INSERT INTO " + tableName + " VALUES (%s)";
+    public void ingestDataFromFile(String tableName, Path inputPath) throws Exception {
+        List<String> tables = clickHouseService.listTables();
+
+        // SQL template to be used for a batched insert query.
+        String sqlTemplate = "INSERT INTO " + tableName + " VALUES %s";
 
         try (CSVReader csvReader = new CSVReaderBuilder(new FileReader(inputPath.toFile()))
-                .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
+                .withCSVParser(new CSVParserBuilder().withSeparator(clickHouseService.delimiter).build())
                 .build()) {
-            List<String> batch = new ArrayList<>(); // To hold the batch of insert statements
 
-            csvReader.readNext();   // skip the first row
+            List<String> batch = new ArrayList<>();
+
+            String[] headers = csvReader.readNext();
+            if (headers == null) {
+                throw new RuntimeException("Headers are missing in the CSV file.");
+            }
+
+            if (tables.isEmpty() || !tables.contains(tableName)) {
+                // Construct a CREATE TABLE query based on the headers
+                StringBuilder createTableQuery = new StringBuilder("CREATE TABLE " + tableName + " (");
+                for (int i = 0; i < headers.length; i++) {
+                    createTableQuery.append(headers[i]).append(" String");
+                    if (i < headers.length - 1) {
+                        createTableQuery.append(", ");
+                    }
+                }
+                createTableQuery.append(") ENGINE = MergeTree() ORDER BY tuple();");
+
+                // Execute the CREATE TABLE query
+                clickHouseService.getClient().query(createTableQuery.toString()).get();
+            }
 
             String[] row;
             while ((row = csvReader.readNext()) != null) {
-                // Create the insert statement by joining the row values as a string
-                String insertValues = String.join(",", Arrays.stream(row)
-                        .map(value -> "'" + value.replace("'", "''") + "'")  // Escape single quotes
-                        .toArray(String[]::new));
+                // Create an individual row as a tuple: ('value1', 'value2', ...)
+                String rowValues = "(" +
+                        String.join(",", Arrays.stream(row)
+                                .map(value -> "'" + value.replace("'", "''") + "'")
+                                .toArray(String[]::new))
+                        + ")";
+                batch.add(rowValues);
 
-                // Construct the full insert query
-                String query = String.format(sqlTemplate, insertValues);
-
-                // Add to batch (for batching insert)
-                batch.add(query);
-
-                // Execute the batch after a certain number of rows (for performance)
-                if (batch.size() >= 1000) { // Assuming you want to batch after 1000 rows
-                    executeBatch(batch);
-                    batch.clear(); // Clear batch for next set of rows
+                // Execute batch every 1000 rows
+                if (batch.size() >= 1000) {
+                    executeBatch(sqlTemplate, batch);
+                    batch.clear();
                 }
             }
 
-            // If there are remaining rows in the batch, execute them
+            // Execute any remaining rows
             if (!batch.isEmpty()) {
-                executeBatch(batch);
+                executeBatch(sqlTemplate, batch);
             }
-
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Error reading CSV file", e);
         }
     }
 
-    private void executeBatch(List<String> batch) throws Exception {
-        // Combine all insert queries in the batch and execute them in a single call
-        String fullQuery = String.join(";", batch);
-        clickHouseService.getClient().query(fullQuery).get(); // Execute the batch query
+    /**
+     * Executes a batched INSERT query that combines multiple row values in one statement.
+     *
+     * @param sqlTemplate the SQL template containing a placeholder for row values
+     * @param batch       the list of row value strings, each formatted as a tuple (e.g., ('a', 'b'))
+     * @throws Exception if an error occurs during query execution
+     */
+    private void executeBatch(String sqlTemplate, List<String> batch) throws Exception {
+        // Combine the batch rows into a comma-separated string
+        String rowsCombined = String.join(", ", batch);
+        // Format the full INSERT query: "INSERT INTO tableName VALUES (row1), (row2), ... ;"
+        String fullQuery = String.format(sqlTemplate, rowsCombined) + ";";
+        // Execute the query synchronously
+        clickHouseService.getClient().query(fullQuery).get();
     }
 
 }

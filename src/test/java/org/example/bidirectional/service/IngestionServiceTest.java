@@ -1,46 +1,37 @@
 package org.example.bidirectional.service;
 
-import com.clickhouse.client.api.Client;
-import com.clickhouse.client.api.query.QueryResponse;
 import com.opencsv.CSVWriter;
 import org.example.bidirectional.config.ClickHouseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
-import org.springframework.util.ResourceUtils;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileWriter;
-import java.io.InputStreamReader;
 import java.nio.file.Paths;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
 
 @SpringJUnitConfig
 public class IngestionServiceTest {
-    private Client mockClient;
-
     private ClickHouseService clickHouseService;
 
     private FileService fileService;
 
     private IngestionService ingestionService;
 
-    private String tableName = "test_table";
+    private final String tableName = "test_table";
 
     @BeforeEach
-    public void setUp() throws Exception {
+    public void setUp() {
         ClickHouseProperties props = new ClickHouseProperties();
         props.setHost("localhost");
         props.setPort(8123);
         props.setUsername("default");
         props.setPassword("");
-        props.setDatabase("uk");
+        props.setDatabase("test_db");
         props.setDelimiter(",");
 
         // Build service with mock client
@@ -49,17 +40,17 @@ public class IngestionServiceTest {
         ingestionService = new IngestionService(clickHouseService);
 
         // Create a test table in ClickHouse
-        String createTableQuery = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
-                "id UInt32, " +
-                "name String" +
-                ") ENGINE = MergeTree() ORDER BY id";
-
-        // Use the ClickHouseService to create the table (assuming client.query() exists and works properly)
-        clickHouseService.getClient().query(createTableQuery); // Create table in ClickHouse
+//        String createTableQuery = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
+//                "id UInt32, " +
+//                "name String" +
+//                ") ENGINE = MergeTree() ORDER BY id";
+//
+//        // Use the ClickHouseService to create the table (assuming client.query() exists and works properly)
+//        clickHouseService.getClient().query(createTableQuery); // Create table in ClickHouse
     }
 
     @AfterEach
-    public void tearDown() throws Exception {
+    public void tearDown() {
         // Clean up the test table after each test
         String deleteDataQuery = "TRUNCATE TABLE " + tableName;
         clickHouseService.getClient().query(deleteDataQuery); // Clean up data
@@ -78,7 +69,7 @@ public class IngestionServiceTest {
         // Ingest the data from CSV into ClickHouse using the FileService and ClickHouseService
         fileService.readCsv(filePath, ','); // Read the CSV
         // Assuming IngestionService has a method to handle ingestion from file to ClickHouse.
-        ingestionService.ingestDataFromFile(tableName, Paths.get(filePath), ','); // Assuming ingestionService exists
+        ingestionService.ingestDataFromFile(tableName, Paths.get(filePath)); // Assuming ingestionService exists
 
         // Verify the data is ingested into ClickHouse
         // Fetch rows from ClickHouse using the ClickHouseService (assumes client.query returns data)
@@ -102,7 +93,7 @@ public class IngestionServiceTest {
         // Set the output CSV path
         String outputPath = "output-test.csv";
         // Ingest data from ClickHouse to a CSV file
-        ingestionService.ingestDataToFile(tableName, List.of("id", "name"), Paths.get(outputPath), ',');
+        ingestionService.ingestDataToFile(tableName, List.of("id", "name"), Paths.get(outputPath));
 
         // Verify that the output file contains the ingested data
         List<String[]> csvData = fileService.readCsv(outputPath, ',');
