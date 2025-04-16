@@ -4,11 +4,16 @@ import org.example.bidirectional.config.ClickHouseProperties;
 import org.example.bidirectional.service.ClickHouseService;
 import org.example.bidirectional.service.FileService;
 import org.example.bidirectional.service.IngestionService;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -32,32 +37,30 @@ public class IngestionController {
     }
 
     @PostMapping("/to-file")
-    public ResponseEntity<byte[]> ingestToFile(@RequestBody IngestRequest request) {
+    public ResponseEntity<InputStreamResource> ingestToFile(@RequestBody IngestRequest request) {
         try {
-            // 1. Setup ClickHouse service using user-supplied config
+            // Prepare file
             ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            // 2. Create a temporary CSV file
-            Path tempFile = Files.createTempFile(request.getTableName() + "_export", ".csv");
+            Path path = Files.createTempFile(request.getTableName() + "_export", ".csv");
+            ingestionService.ingestDataToFile(request.getTableName(), request.getColumns(), path);
 
-            // 3. Write ClickHouse data into the file
-            ingestionService.ingestDataToFile(request.getTableName(), request.getColumns(), tempFile);
+            // Stream the file content
+            InputStream inputStream = new FileInputStream(path.toFile());
+            InputStreamResource resource = new InputStreamResource(inputStream);
 
-            // 4. Read file content into byte array
-            byte[] fileContent = Files.readAllBytes(tempFile);
-
-            // 5. Send as downloadable file
             return ResponseEntity.ok()
-                    .header("Content-Disposition", "attachment; filename=" + tempFile.getFileName().toString())
-                    .header("Content-Type", "text/csv")
-                    .body(fileContent);
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + path.getFileName())
+                    .contentType(MediaType.parseMediaType("text/csv"))
+                    .contentLength(Files.size(path))
+                    .body(resource);
 
         } catch (Exception e) {
-            String errMsg = "Error generating CSV: " + e.getMessage();
-            return ResponseEntity.internalServerError().body(errMsg.getBytes());
+            return ResponseEntity.internalServerError().build();
         }
     }
+
 
     @PostMapping(value = "/from-file", consumes = {"multipart/form-data"})
     public ResponseEntity<String> ingestFromFile(
