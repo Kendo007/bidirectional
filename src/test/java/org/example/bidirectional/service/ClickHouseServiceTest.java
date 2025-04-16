@@ -1,89 +1,67 @@
 package org.example.bidirectional.service;
 
-import com.clickhouse.client.api.Client;
-import com.clickhouse.client.api.query.QueryResponse;
-import com.clickhouse.client.api.query.QuerySettings;
 import org.example.bidirectional.config.ClickHouseProperties;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import java.io.ByteArrayInputStream;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest
 public class ClickHouseServiceTest {
-    private ClickHouseService clickHouseService;
+    private static ClickHouseService clickHouseService;
+    private static final String tableName = "users_test";
 
-    private Client mockClient;
-
-    @BeforeEach
-    void setUp() {
+    @BeforeAll
+    static void setUp() throws ExecutionException, InterruptedException {
         // Create dummy properties
         ClickHouseProperties props = new ClickHouseProperties();
         props.setHost("localhost");
         props.setPort(8123);
         props.setUsername("default");
         props.setPassword("");
-        props.setDatabase("default");
+        props.setDatabase("test_db");
         props.setDelimiter(",");
 
         // Build service with mock client
         clickHouseService = new ClickHouseService(props);
 
-        // Use reflection to inject a mock client
-        mockClient = mock(Client.class);
-        try {
-            var clientField = ClickHouseService.class.getDeclaredField("client");
-            clientField.setAccessible(true);
-            clientField.set(clickHouseService, mockClient);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        // Create test table
+        clickHouseService.getClient().query("DROP TABLE IF EXISTS " + tableName).get();
+        clickHouseService.getClient().query("CREATE TABLE " + tableName + " (name String, age Int32) ENGINE = MergeTree() ORDER BY name").get();
+
+        // Insert some test data
+        clickHouseService.getClient().query("INSERT INTO " + tableName + " VALUES ('Alice', 30), ('Bob', 25)").get();
+    }
+
+    @AfterAll
+    static void tearDown() throws ExecutionException, InterruptedException {
+        // Optionally clean up
+        clickHouseService.getClient().query("DROP TABLE IF EXISTS " + tableName).get();
     }
 
     @Test
     void testListTables() throws Exception {
         List<String> tables = clickHouseService.listTables();
         assertNotNull(tables);
-        assertTrue(tables.contains("uk_price_paid"), "Table 'uk_price_paid' should exist");
+        assertTrue(tables.contains(tableName), "Table " + tableName + " should exist");
     }
 
     @Test
     void testGetColumns() throws Exception {
-        List<String> columns = clickHouseService.getColumns("uk_price_paid");
+        List<String> columns = clickHouseService.getColumns(tableName);
         assertNotNull(columns);
-        assertTrue(columns.containsAll(Arrays.asList("price", "county")),
+        assertTrue(columns.containsAll(Arrays.asList("name", "age")),
                 "Expected columns should be present");
     }
 
     @Test
-    void testFetchDataAndProcess() throws Exception {
-        // Arrange
-        String csvData = "name,age\nAlice,30\nBob,25\n";
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(csvData.getBytes());
-
-        QueryResponse mockResponse = mock(QueryResponse.class);
-        when(mockResponse.getInputStream()).thenReturn(inputStream);
-
-        CompletableFuture<QueryResponse> future = CompletableFuture.completedFuture(mockResponse);
-        when(mockClient.query(anyString(), any(QuerySettings.class))).thenReturn(future);
-
-        // Act
-        clickHouseService.fetchDataAndProcess("users", List.of("name", "age"), row -> {
-            System.out.println("Processed: " + String.join(" | ", row));
-        });
-
-        // Assert: You can add verifications if you store processed results in a list or use a spy
+    void testFetchDataAndProcessWithRealClickHouse() throws Exception {
+        clickHouseService.fetchDataAndProcess(tableName, List.of("name", "age"), row -> System.out.println("Processed: " + String.join(" | ", row)));
     }
 }

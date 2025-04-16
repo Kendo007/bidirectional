@@ -32,27 +32,18 @@ public class IngestionServiceTest {
         props.setUsername("default");
         props.setPassword("");
         props.setDatabase("test_db");
-        props.setDelimiter(",");
+        props.setDelimiter("\t");
 
         // Build service with mock client
         clickHouseService = new ClickHouseService(props);
         fileService = new FileService();
         ingestionService = new IngestionService(clickHouseService);
-
-        // Create a test table in ClickHouse
-//        String createTableQuery = "CREATE TABLE IF NOT EXISTS " + tableName + " (" +
-//                "id UInt32, " +
-//                "name String" +
-//                ") ENGINE = MergeTree() ORDER BY id";
-//
-//        // Use the ClickHouseService to create the table (assuming client.query() exists and works properly)
-//        clickHouseService.getClient().query(createTableQuery); // Create table in ClickHouse
     }
 
     @AfterEach
     public void tearDown() {
         // Clean up the test table after each test
-        String deleteDataQuery = "TRUNCATE TABLE " + tableName;
+        String deleteDataQuery = "TRUNCATE TABLE IF EXISTS " + tableName;
         clickHouseService.getClient().query(deleteDataQuery); // Clean up data
     }
 
@@ -60,14 +51,19 @@ public class IngestionServiceTest {
     public void testIngestDataFromFile() throws Exception {
         // Prepare the CSV data to be written to a file
         String filePath = "test-data.csv";
-        try (CSVWriter writer = new CSVWriter(new FileWriter(filePath))) {
+        try (
+                CSVWriter writer = new CSVWriter(new FileWriter(filePath),
+                        clickHouseService.delimiter,
+                        CSVWriter.NO_QUOTE_CHARACTER,
+                        CSVWriter.DEFAULT_ESCAPE_CHARACTER,
+                        CSVWriter.DEFAULT_LINE_END)
+                ) {
+
             writer.writeNext(new String[]{"id", "name"});
             writer.writeNext(new String[]{"1", "Alice"});
             writer.writeNext(new String[]{"2", "Bob"});
         }
 
-        // Ingest the data from CSV into ClickHouse using the FileService and ClickHouseService
-        fileService.readCsv(filePath, ','); // Read the CSV
         // Assuming IngestionService has a method to handle ingestion from file to ClickHouse.
         ingestionService.ingestDataFromFile(tableName, Paths.get(filePath)); // Assuming ingestionService exists
 
@@ -84,11 +80,15 @@ public class IngestionServiceTest {
 
     @Test
     public void testIngestDataToFile() throws Exception {
+        clickHouseService.createTable(new String[]{"id", "name"}, tableName);
+
         // First insert some data into the database
         String insertQuery1 = "INSERT INTO " + tableName + " VALUES (1, 'Alice')";
         String insertQuery2 = "INSERT INTO " + tableName + " VALUES (2, 'Bob')";
+        String insertQuery3 = "INSERT INTO " + tableName + " VALUES (3, 'James')";
         clickHouseService.getClient().query(insertQuery1);
         clickHouseService.getClient().query(insertQuery2);
+        clickHouseService.getClient().query(insertQuery3);
 
         // Set the output CSV path
         String outputPath = "output-test.csv";
@@ -96,8 +96,8 @@ public class IngestionServiceTest {
         ingestionService.ingestDataToFile(tableName, List.of("id", "name"), Paths.get(outputPath));
 
         // Verify that the output file contains the ingested data
-        List<String[]> csvData = fileService.readCsv(outputPath, ',');
-        assertEquals(3, csvData.size(), "CSV file ingestion failed. Expected 3 rows (header + 2 data).");
+        List<String[]> csvData = fileService.readCsv(outputPath, clickHouseService.delimiter);
+        assertEquals(4, csvData.size(), "CSV file ingestion failed. Expected 3 rows (header + 2 data).");
 
         // Clean up the output file after test
         File file = new File(outputPath);
