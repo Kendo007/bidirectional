@@ -49,6 +49,13 @@
             <classifier>shaded-all</classifier>
         </dependency>
 
+        <!-- ClickHouse Java Client -->
+        <dependency>
+            <groupId>com.clickhouse</groupId>
+            <artifactId>client-v2</artifactId>
+            <version>0.8.2</version>
+        </dependency>
+
         <!-- https://mvnrepository.com/artifact/com.opencsv/opencsv -->
         <dependency>
             <groupId>com.opencsv</groupId>
