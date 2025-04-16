@@ -1,0 +1,3 @@
+price,date,postcode1,postcode2,type,is_new,duration,addr1,addr2,street,locality,town,district,county
+100000,2025-04-01,AB12,34,terraced,1,freehold,123 Main St,Apt 4,Elm St,Downtown,Smalltown,Urban,State
+200000,2025-04-02,CD34,56,semi-detached,0,leasehold,456 Oak Rd,Suite 3,Maple Ave,Uptown,Bigcity,Suburban,Province

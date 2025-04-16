@@ -73,6 +73,21 @@ public class ClickHouseService {
         }
     }
 
+    public void createTable(String[] headers, String tableName) throws Exception {
+        // Construct a CREATE TABLE query based on the headers
+        StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS " + tableName + " (");
+        for (int i = 0; i < headers.length; i++) {
+            createTableQuery.append(headers[i]).append(" String");
+            if (i < headers.length - 1) {
+                createTableQuery.append(", ");
+            }
+        }
+        createTableQuery.append(") ENGINE = MergeTree() ORDER BY tuple();");
+
+        // Execute the CREATE TABLE query
+        client.query(createTableQuery.toString()).get();
+    }
+
     /**
      * Fetches data from the given table and columns, and returns the rows as a list of String arrays.
      * The response is expected in CSVWithNames format, and the header row is skipped.
