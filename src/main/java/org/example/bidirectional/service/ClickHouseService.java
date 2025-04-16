@@ -24,13 +24,27 @@ public class ClickHouseService {
 
     public ClickHouseService(ClickHouseProperties props) {
         this.delimiter = props.getDelimiter().charAt(0);
-        this.client = new Client.Builder()
-                .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
-                .setUsername(props.getUsername())
-                .setPassword(props.getPassword())
-                .compressServerResponse(true)
-                .setDefaultDatabase(props.getDatabase())
-                .build();
+
+//         ✅ Prefer JWT token if provided
+        if (props.getJwtToken() != null && !props.getJwtToken().isEmpty()) {
+            this.client = new Client.Builder()
+                    .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
+                    .setUsername(props.getUsername()) // ✅ Always required
+                    .setAccessToken(props.getJwtToken())
+                    .compressServerResponse(true)
+                    .setDefaultDatabase(props.getDatabase())
+                    .build();
+        } else if (props.getPassword() != null) {
+            this.client = new Client.Builder()
+                    .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
+                    .setUsername(props.getUsername()) // ✅ Always required
+                    .setPassword(props.getPassword())
+                    .compressServerResponse(true)
+                    .setDefaultDatabase(props.getDatabase())
+                    .build();
+        } else {
+            throw new IllegalArgumentException("Please provide a valid JWT token");
+        }
     }
 
     public List<String> listTables() throws Exception {
@@ -113,6 +127,23 @@ public class ClickHouseService {
             csvReader.readNext();
 
             // Return all subsequent rows as a List<String[]>
+            return csvReader.readAll();
+        }
+    }
+
+    public List<String[]> fetchDataWithLimit(String tableName, List<String> columns, int limit) throws Exception {
+        String sql = "SELECT " + String.join(",", columns) + " FROM " + tableName + " LIMIT " + limit;
+        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSVWithNames);
+
+        Future<QueryResponse> response = client.query(sql, settings);
+
+        try (QueryResponse qr = response.get();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
+             CSVReader csvReader = new CSVReaderBuilder(reader)
+                     .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
+                     .build()) {
+
+            csvReader.readNext(); // skip header
             return csvReader.readAll();
         }
     }

@@ -2,13 +2,11 @@ package org.example.bidirectional.controller;
 
 import org.example.bidirectional.config.ClickHouseProperties;
 import org.example.bidirectional.service.ClickHouseService;
-import org.example.bidirectional.service.FileService;
 import org.example.bidirectional.service.IngestionService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -83,6 +81,18 @@ public class IngestionController {
             return ResponseEntity.ok("✅ File data ingested into ClickHouse table: " + tableName);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("❌ Error ingesting file: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/preview")
+    public ResponseEntity<List<String[]>> previewData(@RequestBody IngestRequest request) {
+        try {
+            ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
+            List<String[]> rows = clickHouseService.fetchDataWithLimit(request.getTableName(), request.getColumns(), 100);
+
+            return ResponseEntity.ok(rows);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
         }
     }
 }
