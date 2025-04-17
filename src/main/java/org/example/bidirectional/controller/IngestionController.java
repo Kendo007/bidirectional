@@ -4,25 +4,26 @@ import org.example.bidirectional.config.ClickHouseProperties;
 import org.example.bidirectional.service.ClickHouseService;
 import org.example.bidirectional.service.FileService;
 import org.example.bidirectional.service.IngestionService;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @RestController
 @RequestMapping("/api/ingestion")
 @CrossOrigin(origins = "*")
 public class IngestionController {
+    private static final ExecutorService EXPORT_EXECUTOR = Executors.newCachedThreadPool();
 
     @PostMapping("/tables")
     public ResponseEntity<List<String>> listTables(@RequestBody ClickHouseProperties props) throws Exception {
@@ -38,29 +39,48 @@ public class IngestionController {
     }
 
     @PostMapping("/to-file")
-    public ResponseEntity<InputStreamResource> ingestToFile(@RequestBody IngestRequest request) {
+    public ResponseEntity<StreamingResponseBody> ingestToFile(@RequestBody IngestRequest request) {
         try {
-            // Prepare file
             ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            Path path = Files.createTempFile(request.getTableName() + "_export", ".csv");
-            ingestionService.ingestDataToFile(request.getTableName(), request.getColumns(), path);
+            PipedOutputStream pos = new PipedOutputStream();
+            PipedInputStream pis = new PipedInputStream(pos);
 
-            // Stream the file content
-            InputStream inputStream = new FileInputStream(path.toFile());
-            InputStreamResource resource = new InputStreamResource(inputStream);
+            // ✅ Start streaming ClickHouse data on a background thread
+            EXPORT_EXECUTOR.submit(() -> {
+                try {
+                    ingestionService.streamDataToOutputStream(request.getTableName(), request.getColumns(), pos);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        pos.close();
+                    } catch (IOException ignored) {}
+                }
+            });
+
+            StreamingResponseBody responseBody = outputStream -> {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                try (pis) {
+                    while ((bytesRead = pis.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                }
+            };
 
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + path.getFileName())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + request.getTableName() + "_export.csv")
                     .contentType(MediaType.parseMediaType("text/csv"))
-                    .contentLength(Files.size(path))
-                    .body(resource);
+                    .body(responseBody);
 
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }
+
 
 
     @PostMapping(value = "/from-file", consumes = {"multipart/form-data"})

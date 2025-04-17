@@ -8,6 +8,7 @@ import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import org.example.bidirectional.config.ClickHouseProperties;
+import org.example.bidirectional.exception.AuthenticationException;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -44,28 +45,37 @@ public class ClickHouseService {
         this.delimiter = convertStringToChar(props.getDelimiter());
 
 //         ✅ Prefer JWT token if provided
-        if (props.getJwtToken() != null && !props.getJwtToken().isEmpty()) {
-            this.client = new Client.Builder()
-                    .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
-                    .setUsername(props.getUsername()) // ✅ Always required
-                    .setAccessToken(props.getJwtToken())
-                    .compressServerResponse(true)
-                    .setDefaultDatabase(props.getDatabase())
-                    .setConnectTimeout(60_000)     // ⏱️ 30 seconds
-                    .setSocketTimeout(60_000)        // ⏱️ 60 seconds
-                    .build();
-        } else if (props.getPassword() != null) {
-            this.client = new Client.Builder()
-                    .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
-                    .setUsername(props.getUsername()) // ✅ Always required
-                    .setPassword(props.getPassword())
-                    .compressServerResponse(true)
-                    .setDefaultDatabase(props.getDatabase())
-                    .setConnectTimeout(60_000)     // ⏱️ 30 seconds
-                    .setSocketTimeout(60_000)        // ⏱️ 60 seconds
-                    .build();
-        } else {
-            throw new IllegalArgumentException("Please provide a valid JWT token");
+        try {
+            if (props.getJwtToken() != null && !props.getJwtToken().isEmpty()) {
+                this.client = new Client.Builder()
+                        .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
+                        .setUsername(props.getUsername()) // ✅ Always required
+                        .setAccessToken(props.getJwtToken())
+                        .compressServerResponse(true)
+                        .setDefaultDatabase(props.getDatabase())
+                        .setConnectTimeout(60_000)     // ⏱️ 30 seconds
+                        .setSocketTimeout(60_000)        // ⏱️ 60 seconds
+                        .build();
+            } else if (props.getPassword() != null) {
+                this.client = new Client.Builder()
+                        .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
+                        .setUsername(props.getUsername()) // ✅ Always required
+                        .setPassword(props.getPassword())
+                        .compressServerResponse(true)
+                        .setDefaultDatabase(props.getDatabase())
+                        .setConnectTimeout(60_000)     // ⏱️ 30 seconds
+                        .setSocketTimeout(60_000)        // ⏱️ 60 seconds
+                        .build();
+            } else {
+                throw new AuthenticationException("Invalid credentials or token.");
+            }
+        } catch (Exception e) {
+            if (e instanceof AuthenticationException) {
+                throw (AuthenticationException) e;
+            } else if (e.getMessage().toLowerCase().contains("authentication")) {
+                throw new AuthenticationException("Invalid credentials or token.");
+            }
+            throw new RuntimeException("Failed to connect to ClickHouse: " + e.getMessage(), e);
         }
     }
 
@@ -162,7 +172,7 @@ public class ClickHouseService {
         try (QueryResponse qr = response.get();
              BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
              CSVReader csvReader = new CSVReaderBuilder(reader)
-                     .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
+                     .withCSVParser(new CSVParserBuilder().withSeparator(',').build())
                      .build()) {
 
             csvReader.readNext(); // skip header
