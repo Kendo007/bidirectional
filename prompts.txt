@@ -1,0 +1,29 @@
+# ✅ Prompts for ClickHouse Ingestion Tool (Backend + Frontend)
+
+## 🔧 Debugging & Development
+- "Why is my ClickHouse upload failing on row X?"
+- "What does CANNOT_PARSE_INPUT_ASSERTION_FAILED mean in ClickHouse?"
+- "How to validate uploaded CSV rows before inserting into ClickHouse?"
+- "Show me how to sanitize column names for SQL safety in Java"
+
+## 🚀 Features & Enhancements
+- "Add gzip compression to download stream in Spring Boot"
+- "Implement CSV preview for first N rows in uploaded file"
+- "Generate ClickHouse CREATE TABLE SQL from a CSV header in Java"
+
+## 🔒 Authentication & Security
+- "How to throw AuthenticationException if ClickHouse credentials are invalid?"
+- "How to structure global exception handling in Spring Boot?"
+
+## 🖼️ Frontend (React)
+- "How to show real upload/download progress in MB using Axios?"
+- "Add a progress bar for file uploads and downloads in React"
+- "Create a React modal to preview a CSV table with scrollable layout"
+
+## 🧱 Project Structure
+- "What is a production-ready folder structure for a Spring Boot + React app?"
+- "How to split App.js into reusable components?"
+
+## 🧠 Advanced
+- "How to stream large CSV file from ClickHouse to frontend without saving to disk?"
+- "Simulate download progress when Content-Length is missing"
