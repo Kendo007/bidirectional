@@ -74,10 +74,10 @@ git checkout master
 ### 🔁 Clone the Repository
 
 ```bash
-git clone https://github.com/your-repo/bidirectional-ingestion-java-react.git
+git clone --branch postDevelop --single-branch https://github.com/Kendo007/bidirectional.git
+git clone https://github.com/Kendo007/bidirectional-frontend
 cd bidirectional-ingestion-java-react
 ```
-
 ---
 
 ### 🧱 Backend Setup (Spring Boot + Java)
