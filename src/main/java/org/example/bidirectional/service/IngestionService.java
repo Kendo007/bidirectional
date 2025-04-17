@@ -28,8 +28,11 @@ public class IngestionService {
     }
 
     public void streamDataToOutputStream(String tableName, List<String> columns, OutputStream outputStream) throws Exception {
-        String sql = String.format("SELECT %s FROM %s", String.join(",", columns), tableName)
-                + " FORMAT CSVWithNames SETTINGS format_csv_delimiter = '" + clickHouseService.getDelimiter() + "';";
+        String sql =
+                String.format("SELECT %s FROM %s FORMAT CSVWithNames SETTINGS format_csv_delimiter = '%s';",
+                        String.join(",", columns),
+                        tableName,
+                        clickHouseService.getDelimiter());
 
         var response = clickHouseService.getClient()
                 .query(sql)

@@ -119,7 +119,7 @@ public class ClickHouseService {
         // Construct a CREATE TABLE query based on the headers
         StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS " + tableName + " (");
         for (int i = 0; i < headers.length; i++) {
-            createTableQuery.append(headers[i]).append(" String");
+            createTableQuery.append('`').append(headers[i]).append("` String");
             if (i < headers.length - 1) {
                 createTableQuery.append(", ");
             }

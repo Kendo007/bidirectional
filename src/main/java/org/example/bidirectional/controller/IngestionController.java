@@ -44,8 +44,9 @@ public class IngestionController {
             ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
+            int bufferSize = 16384;
             PipedOutputStream pos = new PipedOutputStream();
-            PipedInputStream pis = new PipedInputStream(pos);
+            PipedInputStream pis = new PipedInputStream(pos, bufferSize);
 
             // ✅ Start streaming ClickHouse data on a background thread
             EXPORT_EXECUTOR.submit(() -> {
@@ -61,7 +62,7 @@ public class IngestionController {
             });
 
             StreamingResponseBody responseBody = outputStream -> {
-                byte[] buffer = new byte[8192];
+                byte[] buffer = new byte[bufferSize];
                 int bytesRead;
                 try (pis) {
                     while ((bytesRead = pis.read(buffer)) != -1) {
@@ -89,9 +90,11 @@ public class IngestionController {
             @RequestParam("tableName") String tableName,
             @RequestPart("config") ClickHouseProperties props
     ) {
+        Path tempPath = null;
+
         try {
             // ✅ Step 1: Save file to temp path
-            Path tempPath = Files.createTempFile("upload_", ".csv");
+            tempPath = Files.createTempFile("upload_", ".csv");
             try (InputStream inputStream = file.getInputStream();
                  OutputStream outStream = Files.newOutputStream(tempPath, StandardOpenOption.WRITE)) {
                 inputStream.transferTo(outStream);
@@ -112,19 +115,18 @@ public class IngestionController {
                 ingestionService.ingestDataFromStream(tableName, ingestionStream, true);
             }
 
-            // ✅ Step 5: Delete temp file
-            Files.deleteIfExists(tempPath);
-
             return ResponseEntity.ok("✅ File uploaded and ingested into ClickHouse table: " + tableName);
 
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.internalServerError()
                     .body("❌ Error uploading file: " + e.getMessage());
+        } finally {
+            try {
+                if (tempPath != null) Files.deleteIfExists(tempPath);
+            } catch (IOException _) {}
         }
     }
-
-
 
     @PostMapping("/preview")
     public ResponseEntity<List<String[]>> previewData(@RequestBody IngestRequest request) {
