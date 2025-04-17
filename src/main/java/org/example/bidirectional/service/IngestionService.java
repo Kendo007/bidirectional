@@ -20,7 +20,7 @@ public class IngestionService {
 
     public void ingestDataFromStream(String tableName, InputStream inputStream, boolean hasHeader) throws Exception {
         InsertSettings settings = new InsertSettings()
-                .serverSetting("format_csv_delimiter", Character.toString(clickHouseService.delimiter));
+                .serverSetting("format_csv_delimiter", Character.toString(clickHouseService.getDelimiter()));
 
         clickHouseService.getClient()
                 .insert(tableName, inputStream, hasHeader ? ClickHouseFormat.CSVWithNames : ClickHouseFormat.CSV, settings)
@@ -29,7 +29,7 @@ public class IngestionService {
 
     public void streamDataToOutputStream(String tableName, List<String> columns, OutputStream outputStream) throws Exception {
         String sql = String.format("SELECT %s FROM %s", String.join(",", columns), tableName)
-                + " FORMAT CSVWithNames SETTINGS format_csv_delimiter = '" + clickHouseService.delimiter + "';";
+                + " FORMAT CSVWithNames SETTINGS format_csv_delimiter = '" + clickHouseService.getDelimiter() + "';";
 
         var response = clickHouseService.getClient()
                 .query(sql)

@@ -34,23 +34,7 @@ public class ClickHouseServiceIntegrationTest {
     }
 
     @Test
-    public void testFetchDataAndProcess() throws Exception {
-        // Insert some test data into the table
-        client.query("INSERT INTO test_db.users VALUES ('Alice', 30), ('Bob', 25)").get();
-
-        // Act: Fetch data from the database and process it
-        List<String> columns = List.of("name", "age");
-        service.fetchDataAndProcess("users", columns, row -> {
-            assertNotNull(row);
-            assertTrue(row.length == 2);
-            assertNotNull(row[0]); // Check if name is not null
-            assertNotNull(row[1]); // Check if age is not null
-            System.out.println("Processed row: " + String.join(", ", row));
-        });
-    }
-
-    @Test
-    public void testListTables() throws Exception {
+    public void testListTables() {
         // Act: Fetch the list of tables from the database
         List<String> tables = service.listTables();
 
@@ -59,7 +43,7 @@ public class ClickHouseServiceIntegrationTest {
     }
 
     @Test
-    public void testGetColumns() throws Exception {
+    public void testGetColumns() {
         // Act: Get columns for the 'users' table
         List<String> columns = service.getColumns("users");
 

@@ -4,24 +4,22 @@ import com.clickhouse.client.api.Client;
 import com.clickhouse.client.api.query.QueryResponse;
 import com.clickhouse.client.api.query.QuerySettings;
 import com.clickhouse.data.ClickHouseFormat;
-import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
-import com.opencsv.CSVReaderBuilder;
 import org.example.bidirectional.config.ClickHouseProperties;
 import org.example.bidirectional.exception.AuthenticationException;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Future;
-import java.util.stream.Collectors;
 
 @Service
 public class ClickHouseService {
     private final Client client;
-    public final char delimiter;
+    private final char delimiter;
+    private final String database;
 
     private static char convertStringToChar(String input) {
         if (input == null || input.isEmpty()) {
@@ -43,6 +41,7 @@ public class ClickHouseService {
 
     public ClickHouseService(ClickHouseProperties props) {
         this.delimiter = convertStringToChar(props.getDelimiter());
+        this.database = props.getDatabase().trim();
 
 //         ✅ Prefer JWT token if provided
         try {
@@ -79,44 +78,41 @@ public class ClickHouseService {
         }
     }
 
-    public List<String> listTables() throws Exception {
-        // Use QuerySettings to set the format (TabSeparated) for the SHOW TABLES query
-        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.TabSeparated);
-
-        // Execute the query to get the list of tables
-        Future<QueryResponse> response = client.query("SHOW TABLES", settings);
+    /**
+     * Fetches a list of strings from ClickHouse based on the provided SQL query.
+     * The first column of each row is returned as a list of strings.
+     *
+     * @param sqlQuery the SQL query to execute
+     * @return a list of strings from the first column of the result set
+     */
+    private List<String> getListFromResponse(String sqlQuery) {
+        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSV);
+        Future<QueryResponse> response = client.query(sqlQuery, settings);
 
         try (QueryResponse qr = response.get();
              BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
-             CSVReader csvReader = new CSVReaderBuilder(reader)
-                     .withCSVParser(new CSVParserBuilder().withSeparator('\t').build())
-                     .build()) {
+             CSVReader csvReader = new CSVReader(reader)) {
+            List<String> names = new ArrayList<>();
 
-            // Process the result and collect table names
-            return csvReader.readAll()
-                    .stream()
-                    .map(row -> row[0])  // The first column contains the table name
-                    .collect(Collectors.toList());
+            String[] row;
+            while ((row = csvReader.readNext()) != null)
+                names.add(row[0]);
+
+            return names;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to fetch data from ClickHouse: " + e.getMessage(), e);
         }
     }
 
-    public List<String> getColumns(String tableName) throws Exception {
-        String sql = "DESCRIBE TABLE " + tableName;
-        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.TabSeparated);
+    public List<String> listTables() {
+        return getListFromResponse("SHOW TABLES FROM " + database);
+    }
 
-        Future<QueryResponse> response = client.query(sql, settings);
+    public List<String> getColumns(String tableName) {
+        String sql = String.format("SELECT name FROM system.columns WHERE database = '%s' AND table = '%s';",
+                database, tableName);
 
-        try (QueryResponse qr = response.get();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
-             CSVReader csvReader = new CSVReaderBuilder(reader)
-                     .withCSVParser(new CSVParserBuilder().withSeparator('\t').build())
-                     .build()) {
-
-            return csvReader.readAll().stream()
-                    .map(row -> row.length > 0 ? row[0].trim() : "")
-                    .filter(name -> !name.isEmpty())
-                    .collect(Collectors.toList());
-        }
+        return getListFromResponse(sql);
     }
 
     public void createTable(String[] headers, String tableName) throws Exception {
@@ -135,6 +131,22 @@ public class ClickHouseService {
     }
 
     /**
+     * Fetches data from ClickHouse using the provided SQL query and
+     * returns the result as a list of String arrays.
+     */
+    private List<String[]> fetchDataHelper(String sql) throws Exception {
+        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSV);
+
+        Future<QueryResponse> response = client.query(sql, settings);
+
+        try (QueryResponse qr = response.get();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
+             CSVReader csvReader = new CSVReader(reader)) {
+            return csvReader.readAll();
+        }
+    }
+
+    /**
      * Fetches data from the given table and columns, and returns the rows as a list of String arrays.
      * The response is expected in CSVWithNames format, and the header row is skipped.
      *
@@ -145,74 +157,23 @@ public class ClickHouseService {
      */
     public List<String[]> fetchData(String tableName, List<String> columns) throws Exception {
         String sql = "SELECT " + String.join(",", columns) + " FROM " + tableName;
-        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSVWithNames);
-
-        Future<QueryResponse> response = client.query(sql, settings);
-
-        try (QueryResponse qr = response.get();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
-             CSVReader csvReader = new CSVReaderBuilder(reader)
-                     .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
-                     .build()) {
-
-            // Skip the header row
-            csvReader.readNext();
-
-            // Return all subsequent rows as a List<String[]>
-            return csvReader.readAll();
-        }
+        return fetchDataHelper(sql);
     }
 
     public List<String[]> fetchDataWithLimit(String tableName, List<String> columns, int limit) throws Exception {
         String sql = "SELECT " + String.join(",", columns) + " FROM " + tableName + " LIMIT " + limit;
-        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSVWithNames);
-
-        Future<QueryResponse> response = client.query(sql, settings);
-
-        try (QueryResponse qr = response.get();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
-             CSVReader csvReader = new CSVReaderBuilder(reader)
-                     .withCSVParser(new CSVParserBuilder().withSeparator(',').build())
-                     .build()) {
-
-            csvReader.readNext(); // skip header
-            return csvReader.readAll();
-        }
-    }
-
-    /**
-     * Fetch data from ClickHouse and process each row.
-     *
-     * @param tableName  The table name.
-     * @param columns    The columns to fetch.
-     * @param processor  The custom data processor.
-     * @throws Exception if an error occurs during the process.
-     */
-    public void fetchDataAndProcess(String tableName, List<String> columns, DataProcessor processor) throws Exception {
-        String sql = "SELECT " + String.join(",", columns) + " FROM " + tableName;
-        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSVWithNames);
-
-        Future<QueryResponse> response = client.query(sql, settings);
-
-        try (QueryResponse qr = response.get();
-             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
-             CSVReader csvReader = new CSVReader(reader)) {
-
-            String[] row;
-            while ((row = csvReader.readNext()) != null) {
-                processor.process(row);  // Process each row using the custom processor
-            }
-        }
+        return fetchDataHelper(sql);
     }
 
     public Client getClient() {
         return client;
     }
 
-    /**
-     * Interface to define custom row processing logic.
-     */
-    public interface DataProcessor {
-        void process(String[] row) throws IOException;
+    public char getDelimiter() {
+        return delimiter;
+    }
+
+    public String getDatabase() {
+        return database;
     }
 }

@@ -26,14 +26,14 @@ public class IngestionController {
     private static final ExecutorService EXPORT_EXECUTOR = Executors.newCachedThreadPool();
 
     @PostMapping("/tables")
-    public ResponseEntity<List<String>> listTables(@RequestBody ClickHouseProperties props) throws Exception {
+    public ResponseEntity<List<String>> listTables(@RequestBody ClickHouseProperties props) {
         ClickHouseService clickHouseService = new ClickHouseService(props);
         return ResponseEntity.ok(clickHouseService.listTables());
     }
 
     @PostMapping("/columns")
     public ResponseEntity<List<String>> getColumns(@RequestParam String tableName,
-                                                   @RequestBody ClickHouseProperties props) throws Exception {
+                                                   @RequestBody ClickHouseProperties props) {
         ClickHouseService clickHouseService = new ClickHouseService(props);
         return ResponseEntity.ok(clickHouseService.getColumns(tableName));
     }
@@ -103,7 +103,7 @@ public class IngestionController {
 
             // ✅ Step 3: Open stream #1 to read header (if needed)
             try (InputStream headerStream = Files.newInputStream(tempPath)) {
-                    String[] headers = FileService.readCsvHeader(headerStream, clickHouseService.delimiter);
+                    String[] headers = FileService.readCsvHeader(headerStream, clickHouseService.getDelimiter());
                     clickHouseService.createTable(headers, tableName);
             }
 
