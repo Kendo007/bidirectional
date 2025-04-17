@@ -45,12 +45,12 @@ git checkout master
 2. Select whether to create a **new table** or use an **existing one**.
 3. Upload a CSV file using file picker.
 4. Provide ClickHouse connection details:
-    - Host, Port, Username, Password or JWT Token
-    - Target database and table name
+   - Host, Port, Username, Password or JWT Token
+   - Target database and table name
 5. Click **Upload**:
-    - File is streamed to backend in chunks.
-    - Progress bar shows real-time upload MB.
-    - Backend inserts data into ClickHouse.
+   - File is streamed to backend in chunks.
+   - Progress bar shows real-time upload MB.
+   - Backend inserts data into ClickHouse.
 6. On success, the data is immediately available in ClickHouse.
 
 ---
@@ -63,9 +63,9 @@ git checkout master
 4. Select a table and fetch columns.
 5. Choose specific columns (or all).
 6. Click **Download**:
-    - File is streamed from ClickHouse to browser.
-    - Progress bar shows MB downloaded.
-    - File is saved as `.csv`.
+   - File is streamed from ClickHouse to browser.
+   - Progress bar shows MB downloaded.
+   - File is saved as `.csv`.
 
 ---
 
@@ -76,7 +76,6 @@ git checkout master
 ```bash
 git clone --branch postDevelop --single-branch https://github.com/Kendo007/bidirectional.git
 git clone https://github.com/Kendo007/bidirectional-frontend
-cd bidirectional-ingestion-java-react
 ```
 
 ---
@@ -88,6 +87,7 @@ cd bidirectional-ingestion-java-react
 3. **Run the Spring Boot App**:
 
 ```bash
+cd bidirectional
 mvn spring-boot:run
 ```
 
@@ -99,7 +99,7 @@ By default, it runs at: `http://localhost:8080`
 
 1. Navigate to `frontend/` folder:
 ```bash
-cd frontend
+cd cd bidirectional-frontend
 ```
 
 2. Install dependencies:
