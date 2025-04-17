@@ -5,10 +5,10 @@ import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import com.opencsv.CSVWriter;
 import com.opencsv.exceptions.CsvException;
+import com.opencsv.exceptions.CsvValidationException;
 import org.springframework.stereotype.Service;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+
+import java.io.*;
 import java.util.List;
 
 @Service
@@ -34,4 +34,14 @@ public class FileService {
         }
     }
 
+    public static String[] readCsvHeader(InputStream inputStream, char delimiter) throws IOException {
+        // Read header with the first stream
+        try (CSVReader reader = new CSVReaderBuilder(new InputStreamReader(inputStream))
+                .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
+                .build()) {
+            return reader.readNext(); // Read only the header
+        } catch (CsvValidationException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

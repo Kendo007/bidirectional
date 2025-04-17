@@ -2,6 +2,7 @@ package org.example.bidirectional.controller;
 
 import org.example.bidirectional.config.ClickHouseProperties;
 import org.example.bidirectional.service.ClickHouseService;
+import org.example.bidirectional.service.FileService;
 import org.example.bidirectional.service.IngestionService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -12,8 +13,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 
 @RestController
@@ -67,22 +70,41 @@ public class IngestionController {
             @RequestPart("config") ClickHouseProperties props
     ) {
         try {
-            // 1. Write uploaded CSV to temp path
-            Path path = Files.createTempFile("upload_", ".csv");
-            Files.write(path, file.getBytes());
+            // ✅ Step 1: Save file to temp path
+            Path tempPath = Files.createTempFile("upload_", ".csv");
+            try (InputStream inputStream = file.getInputStream();
+                 OutputStream outStream = Files.newOutputStream(tempPath, StandardOpenOption.WRITE)) {
+                inputStream.transferTo(outStream);
+            }
 
-            // 2. Create ClickHouse client and ingestion service
+            // ✅ Step 2: Setup services
             ClickHouseService clickHouseService = new ClickHouseService(props);
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            // 3. Ingest file into ClickHouse
-            ingestionService.ingestDataFromFile(tableName, path);
+            // ✅ Step 3: Open stream #1 to read header (if needed)
+            try (InputStream headerStream = Files.newInputStream(tempPath)) {
+                    String[] headers = FileService.readCsvHeader(headerStream, clickHouseService.delimiter);
+                    clickHouseService.createTable(headers, tableName);
+            }
 
-            return ResponseEntity.ok("✅ File data ingested into ClickHouse table: " + tableName);
+            // ✅ Step 4: Open stream #2 to ingest all rows from start
+            try (InputStream ingestionStream = Files.newInputStream(tempPath)) {
+                ingestionService.ingestDataFromStream(tableName, ingestionStream, true);
+            }
+
+            // ✅ Step 5: Delete temp file
+            Files.deleteIfExists(tempPath);
+
+            return ResponseEntity.ok("✅ File uploaded and ingested into ClickHouse table: " + tableName);
+
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("❌ Error ingesting file: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError()
+                    .body("❌ Error uploading file: " + e.getMessage());
         }
     }
+
+
 
     @PostMapping("/preview")
     public ResponseEntity<List<String[]>> previewData(@RequestBody IngestRequest request) {

@@ -20,10 +20,28 @@ import java.util.stream.Collectors;
 @Service
 public class ClickHouseService {
     private final Client client;
-    protected final char delimiter;
+    public final char delimiter;
+
+    private static char convertStringToChar(String input) {
+        if (input == null || input.isEmpty()) {
+            throw new IllegalArgumentException("Input must be a non-empty string");
+        }
+
+        return switch (input) {
+            case "\\n" -> '\n';
+            case "\\t" -> '\t';
+            case "\\r" -> '\r';
+            case "\\b" -> '\b';
+            case "\\f" -> '\f';
+            case "\\'" -> '\'';
+            case "\\\"" -> '\"';
+            case "\\\\" -> '\\';
+            default -> input.charAt(0);
+        };
+    }
 
     public ClickHouseService(ClickHouseProperties props) {
-        this.delimiter = props.getDelimiter().charAt(0);
+        this.delimiter = convertStringToChar(props.getDelimiter());
 
 //         ✅ Prefer JWT token if provided
         if (props.getJwtToken() != null && !props.getJwtToken().isEmpty()) {
@@ -33,6 +51,8 @@ public class ClickHouseService {
                     .setAccessToken(props.getJwtToken())
                     .compressServerResponse(true)
                     .setDefaultDatabase(props.getDatabase())
+                    .setConnectTimeout(60_000)     // ⏱️ 30 seconds
+                    .setSocketTimeout(60_000)        // ⏱️ 60 seconds
                     .build();
         } else if (props.getPassword() != null) {
             this.client = new Client.Builder()
@@ -41,6 +61,8 @@ public class ClickHouseService {
                     .setPassword(props.getPassword())
                     .compressServerResponse(true)
                     .setDefaultDatabase(props.getDatabase())
+                    .setConnectTimeout(60_000)     // ⏱️ 30 seconds
+                    .setSocketTimeout(60_000)        // ⏱️ 60 seconds
                     .build();
         } else {
             throw new IllegalArgumentException("Please provide a valid JWT token");

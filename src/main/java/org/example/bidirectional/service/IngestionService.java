@@ -1,5 +1,7 @@
 package org.example.bidirectional.service;
 
+import com.clickhouse.client.api.insert.InsertSettings;
+import com.clickhouse.data.ClickHouseFormat;
 import com.opencsv.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -60,8 +62,6 @@ public class IngestionService {
      * @throws Exception if an error occurs during reading or data ingestion
      */
     public void ingestDataFromFile(String tableName, Path inputPath) throws Exception {
-        List<String> tables = clickHouseService.listTables();
-
         // SQL template to be used for a batched insert query.
         String sqlTemplate = "INSERT INTO " + tableName + " VALUES ";
         int count = 0;
@@ -76,10 +76,7 @@ public class IngestionService {
             if (headers == null) {
                 throw new RuntimeException("Headers are missing in the CSV file.");
             }
-
-            if (tables.isEmpty() || !tables.contains(tableName)) {
-                clickHouseService.createTable(headers, tableName);
-            }
+            clickHouseService.createTable(headers, tableName);
 
             String[] row;
             while ((row = csvReader.readNext()) != null) {
@@ -120,4 +117,12 @@ public class IngestionService {
         clickHouseService.getClient().query(fullQuery).get();
     }
 
+    public void ingestDataFromStream(String tableName, InputStream inputStream, boolean hasHeader) throws Exception {
+        InsertSettings settings = new InsertSettings()
+                .serverSetting("format_csv_delimiter", Character.toString(clickHouseService.delimiter));
+
+        clickHouseService.getClient()
+                .insert(tableName, inputStream, hasHeader ? ClickHouseFormat.CSVWithNames : ClickHouseFormat.CSV, settings)
+                .get();
+    }
 }
