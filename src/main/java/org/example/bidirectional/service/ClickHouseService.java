@@ -117,7 +117,7 @@ public class ClickHouseService {
 
     public void createTable(String[] headers, String tableName) throws Exception {
         // Construct a CREATE TABLE query based on the headers
-        StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS " + tableName + " (");
+        StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS `" + tableName + "` (");
         for (int i = 0; i < headers.length; i++) {
             createTableQuery.append('`').append(headers[i]).append("` String");
             if (i < headers.length - 1) {
@@ -156,13 +156,25 @@ public class ClickHouseService {
      * @throws Exception if an error occurs during the query or reading the data
      */
     public List<String[]> fetchData(String tableName, List<String> columns) throws Exception {
-        String sql = "SELECT " + String.join(",", columns) + " FROM " + tableName;
-        return fetchDataHelper(sql);
+        StringBuilder sb = new StringBuilder("SELECT ");
+        for (int i = 0; i < columns.size(); i++) {
+            sb.append('`').append(columns.get(i)).append('`');
+            if (i < columns.size() - 1) sb.append(',');
+        }
+
+        sb.append(" FROM `").append(tableName).append('`');
+        return fetchDataHelper(sb.toString());
     }
 
     public List<String[]> fetchDataWithLimit(String tableName, List<String> columns, int limit) throws Exception {
-        String sql = "SELECT " + String.join(",", columns) + " FROM " + tableName + " LIMIT " + limit;
-        return fetchDataHelper(sql);
+        StringBuilder sb = new StringBuilder("SELECT ");
+        for (int i = 0; i < columns.size(); i++) {
+            sb.append('`').append(columns.get(i)).append('`');
+            if (i < columns.size() - 1) sb.append(',');
+        }
+
+        sb.append(" FROM `").append(tableName).append("` LIMIT ").append(limit);
+        return fetchDataHelper(sb.toString());
     }
 
     public Client getClient() {

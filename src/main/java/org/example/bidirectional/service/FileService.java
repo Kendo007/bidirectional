@@ -9,6 +9,7 @@ import com.opencsv.exceptions.CsvValidationException;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -34,12 +35,20 @@ public class FileService {
         }
     }
 
-    public static String[] readCsvHeader(InputStream inputStream, char delimiter) throws IOException {
+    public static List<String[]> readCsvRows(InputStream inputStream, char delimiter, int limit) throws IOException {
+        List<String[]> data = new ArrayList<>();
+
         // Read header with the first stream
         try (CSVReader reader = new CSVReaderBuilder(new InputStreamReader(inputStream))
                 .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
                 .build()) {
-            return reader.readNext(); // Read only the header
+            String[] row;
+            while ((row = reader.readNext()) != null && limit >= 0) {
+                data.add(row);
+                --limit;
+            }
+
+            return data;
         } catch (CsvValidationException e) {
             throw new RuntimeException(e);
         }
