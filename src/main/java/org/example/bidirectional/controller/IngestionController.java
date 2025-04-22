@@ -18,6 +18,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
 
+
 @RestController
 @RequestMapping("/api/ingestion")
 @CrossOrigin(origins = "*")
@@ -86,7 +87,8 @@ public class IngestionController {
             @RequestPart("file") MultipartFile file,
             @RequestParam("tableName") String tableName,
             @RequestPart("config") ClickHouseProperties props,
-            @RequestPart("headers") List<String> selectedHeaders
+            @RequestPart("headers") List<String> selectedHeaders,
+            @RequestPart(value = "types", required = false) Map<String, String> types
     ) {
         Path tempPath;
 
@@ -102,8 +104,8 @@ public class IngestionController {
             ClickHouseService clickHouseService = new ClickHouseService(props);
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            // ✅ Step 3: Create table using selected headers
-            clickHouseService.createTable(selectedHeaders.toArray(new String[0]), tableName);
+            if (types != null)
+                clickHouseService.createTable(types, tableName);
 
             // ✅ Step 4: Ingest only selected columns from CSV stream
             try (InputStream ingestionStream = Files.newInputStream(tempPath)) {
@@ -162,4 +164,9 @@ public class IngestionController {
         }
     }
 
+    @PostMapping("/types")
+    public List<String> getTypes(@RequestBody ClickHouseProperties props) {
+        ClickHouseService clickHouseService = new ClickHouseService(props);
+        return clickHouseService.getTypes();
+    }
 }

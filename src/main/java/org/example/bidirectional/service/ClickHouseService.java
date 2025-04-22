@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 @Service
@@ -20,6 +22,7 @@ public class ClickHouseService {
     private final Client client;
     private final char delimiter;
     private final String database;
+    private static List<String> types = null;
 
     private static char convertStringToChar(String input) {
         if (input == null || input.isEmpty()) {
@@ -43,28 +46,29 @@ public class ClickHouseService {
         this.delimiter = convertStringToChar(props.getDelimiter());
         this.database = props.getDatabase().trim();
 
-//         ✅ Prefer JWT token if provided
+        var cb = new Client.Builder()
+                .setUsername(props.getUsername()) // ✅ Always required
+                .compressServerResponse(true)
+                .setDefaultDatabase(props.getDatabase())
+                .setConnectTimeout(60_000)     // ⏱️ 30 seconds
+                .setSocketTimeout(60_000);        // ⏱️ 60 seconds
+
+        // ✅ Prefer JWT token if provided
         try {
+            if (props.getProtocol() != null) {
+                if (props.getProtocol().equalsIgnoreCase("http")) {
+                    cb.addEndpoint("http://" + props.getHost() + ":" + props.getPort());
+                } else if (props.getProtocol().equalsIgnoreCase("https")) {
+                    cb.addEndpoint("https://" + props.getHost() + ":" + props.getPort());
+                }
+            } else {
+                throw new AuthenticationException("Please specify a protocol");
+            }
+
             if (props.getJwtToken() != null && !props.getJwtToken().isEmpty()) {
-                this.client = new Client.Builder()
-                        .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
-                        .setUsername(props.getUsername()) // ✅ Always required
-                        .setAccessToken(props.getJwtToken())
-                        .compressServerResponse(true)
-                        .setDefaultDatabase(props.getDatabase())
-                        .setConnectTimeout(60_000)     // ⏱️ 30 seconds
-                        .setSocketTimeout(60_000)        // ⏱️ 60 seconds
-                        .build();
+                this.client = cb.setAccessToken(props.getJwtToken()).build();
             } else if (props.getPassword() != null) {
-                this.client = new Client.Builder()
-                        .addEndpoint("http://" + props.getHost() + ":" + props.getPort())
-                        .setUsername(props.getUsername()) // ✅ Always required
-                        .setPassword(props.getPassword())
-                        .compressServerResponse(true)
-                        .setDefaultDatabase(props.getDatabase())
-                        .setConnectTimeout(60_000)     // ⏱️ 30 seconds
-                        .setSocketTimeout(60_000)        // ⏱️ 60 seconds
-                        .build();
+                this.client = cb.setPassword(props.getPassword()).build();
             } else {
                 throw new AuthenticationException("Invalid credentials or token.");
             }
@@ -115,14 +119,34 @@ public class ClickHouseService {
         return getListFromResponse(sql);
     }
 
-    public void createTable(String[] headers, String tableName) throws Exception {
+    public List<String> getTypes() {
+        if (types != null) {
+            return types;
+        }
+
+        String sql = "SELECT name FROM system.data_type_families " +
+                     "UNION DISTINCT " +
+                     "SELECT alias_to AS name FROM system.data_type_families WHERE name != '';";
+
+        types = getListFromResponse(sql);
+        Collections.sort(types);
+
+        types.addFirst("String");
+
+        return types;
+    }
+
+    public void createTable(Map<String, String> headers, String tableName) throws Exception {
         // Construct a CREATE TABLE query based on the headers
+        int i = headers.size() - 1;
         StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS `" + tableName + "` (");
-        for (int i = 0; i < headers.length; i++) {
-            createTableQuery.append('`').append(headers[i]).append("` String");
-            if (i < headers.length - 1) {
+        for (Map.Entry<String, String> e : headers.entrySet()) {
+            createTableQuery.append('`').append(e.getKey()).append("` ").append(e.getValue());
+
+            if (i > 0)
                 createTableQuery.append(", ");
-            }
+
+            --i;
         }
         createTableQuery.append(") ENGINE = MergeTree() ORDER BY tuple();");
 

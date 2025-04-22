@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "clickhouse")
 public class ClickHouseProperties {
 
+    private String protocol;
     private String host;
     private int port;
     private String database;
@@ -14,6 +15,14 @@ public class ClickHouseProperties {
     private String jwtToken;  // For JWT or token
     private String password;   // For password
     private String delimiter = ",";  // Default delimiter
+
+    public String getProtocol() {
+        return protocol;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
+    }
 
     // Getter and Setter for host
     public String getHost() {
