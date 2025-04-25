@@ -1,20 +1,14 @@
 package org.example.bidirectional.config;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
-
-@Component
-@ConfigurationProperties(prefix = "clickhouse")
-public class ClickHouseProperties {
-
+public class ConnectionConfig {
     private String protocol;
     private String host;
     private int port;
     private String database;
     private String username;
-    private String jwtToken;  // For JWT or token
+    private String authType;
+    private String jwt;  // For JWT or token
     private String password;   // For password
-    private String delimiter = ",";  // Default delimiter
 
     public String getProtocol() {
         return protocol;
@@ -60,13 +54,22 @@ public class ClickHouseProperties {
         this.username = username;
     }
 
-    // Getter and Setter for jwtToken (used as a token or JWT)
-    public String getJwtToken() {
-        return jwtToken;
+    // Getter and Setter for authType
+    public String getAuthType() {
+        return authType;
     }
 
-    public void setJwtToken(String jwtToken) {
-        this.jwtToken = jwtToken;
+    public void setAuthType(String authType) {
+        this.authType = authType;
+    }
+
+    // Getter and Setter for jwtToken (used as a token or JWT)
+    public String getJwt() {
+        return jwt;
+    }
+
+    public void setJwt(String jwtToken) {
+        this.jwt = jwtToken;
     }
 
     // Getter and Setter for password
@@ -76,14 +79,5 @@ public class ClickHouseProperties {
 
     public void setPassword(String password) {
         this.password = password;
-    }
-
-    // Getter and Setter for delimiter
-    public String getDelimiter() {
-        return delimiter;
-    }
-
-    public void setDelimiter(String delimiter) {
-        this.delimiter = delimiter;
     }
 }

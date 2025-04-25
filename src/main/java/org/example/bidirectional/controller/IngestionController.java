@@ -1,11 +1,14 @@
 package org.example.bidirectional.controller;
 
-import org.example.bidirectional.config.ClickHouseProperties;
+import org.example.bidirectional.config.*;
+import org.example.bidirectional.exception.AuthenticationException;
+import org.example.bidirectional.model.ColumnInfo;
 import org.example.bidirectional.service.ClickHouseService;
 import org.example.bidirectional.service.FileService;
 import org.example.bidirectional.service.IngestionService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,46 +17,110 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
-@RequestMapping("/api/ingestion")
-@CrossOrigin(origins = "*")
+@RequestMapping("/api/clickhouse")
 public class IngestionController {
+    @PostMapping("/test-connection")
+    public ResponseEntity<?> testConnection(@RequestBody ConnectionConfig props) {
+        try {
+            ClickHouseService clickHouseService = new ClickHouseService(props);
+
+            return ResponseEntity.ok(Collections.singletonMap("success", clickHouseService.testConnection()));
+        } catch (AuthenticationException e) {
+            return ResponseEntity.status(401).body(false);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(false);
+        }
+    }
+
     @PostMapping("/tables")
-    public ResponseEntity<List<String>> listTables(@RequestBody ClickHouseProperties props) {
-        ClickHouseService clickHouseService = new ClickHouseService(props);
-        return ResponseEntity.ok(clickHouseService.listTables());
+    public ResponseEntity<Map<String, List<String>>> listTables(@RequestBody TablesConfig tablesConfig) {
+        ClickHouseService clickHouseService = new ClickHouseService(tablesConfig.getConnection());
+        return ResponseEntity.ok(Collections.singletonMap("tables", clickHouseService.listTables()));
     }
 
     @PostMapping("/columns")
-    public ResponseEntity<List<String>> getColumns(@RequestParam String tableName,
-                                                   @RequestBody ClickHouseProperties props) {
-        ClickHouseService clickHouseService = new ClickHouseService(props);
-        return ResponseEntity.ok(clickHouseService.getColumns(tableName));
+    public ResponseEntity<Map<String, List<ColumnInfo>>> getColumns(@RequestBody ColumnConfig props) {
+        ClickHouseService clickHouseService = new ClickHouseService(props.getConnection());
+        return ResponseEntity.ok(Collections.singletonMap("columns", clickHouseService.getColumns(props.getTableName())));
     }
 
-    @PostMapping("/to-file")
-    public ResponseEntity<FileSystemResource> ingestToFile(@RequestBody IngestRequest request) {
+    /**
+     * Extracts the header and data from the given list of rows
+     */
+    private ResponseEntity<Map<String, Object>> getHeadAndData(List<String[]> rows) {
+        if (rows.isEmpty()) {
+            return ResponseEntity.ok(Map.of("headers", List.of(), "rows", List.of()));
+        }
+
+        List<String> headers = List.of(rows.getFirst());
+        List<String[]> data = rows.subList(1, rows.size());
+
+        return ResponseEntity.ok(Map.of(
+                "headers", headers,
+                "rows", data
+        ));
+    }
+
+    @PostMapping("/query-selected-columns")
+    public ResponseEntity<Map<String, Object>> querySelectedColumns(@RequestBody SelectedColumnsQueryConfig config) {
+        try {
+            ClickHouseService clickHouseService = new ClickHouseService(config.getConnection());
+
+            List<String[]> rows = clickHouseService.querySelectedColumns(
+                    config.getTableName(),
+                    config.getColumns(),
+                    config.getJoinTables(),
+                    config.getDelimiter()
+            );
+
+            // Build response: first row is headers, remaining rows are data
+            return getHeadAndData(rows);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Failed to query selected columns: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/preview-csv", consumes = {"multipart/form-data"})
+    public ResponseEntity<Map<String, Object>> previewCSV(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "delimiter", defaultValue = ",") String delimiter
+    ) {
+        try {
+            List<String[]> rows = FileService.readCsvRows(file.getInputStream(), delimiter);
+            return getHeadAndData(rows);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Failed to preview: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/download")
+    public ResponseEntity<FileSystemResource> ingestToFile(@RequestBody SelectedColumnsQueryConfig request) {
         Path path;
         try {
-            ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
+            ClickHouseService clickHouseService = new ClickHouseService(request.getConnection());
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
             // Creating temp file and writing to it
             path = Files.createTempFile(request.getTableName() + "_export", Math.random() + ".csv");
             try (OutputStream outStream = Files.newOutputStream(path)) {
-                ingestionService.streamDataToOutputStream(request.getTableName(), request.getColumns(), outStream);
+                ingestionService.streamDataToOutputStream(request, outStream);
             }
 
             // Creating fileSystemResource for downloading
             FileSystemResource resource = getFileSystemResource(path);
+            String cleanFilename = request.getTableName().replaceAll("[^a-zA-Z0-9-_]", "_") + ".csv";
 
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + path.getFileName())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + cleanFilename)
+                    .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Content-Length")
                     .contentType(MediaType.parseMediaType("text/csv"))
                     .contentLength(resource.contentLength())
                     .body(resource);
@@ -74,6 +141,7 @@ public class IngestionController {
                     @Override
                     public void close() throws IOException {
                         super.close();
+
                         try { Files.deleteIfExists(file.toPath()); }
                         catch (IOException _) {}
                     }
@@ -82,91 +150,50 @@ public class IngestionController {
         };
     }
 
-    @PostMapping(value = "/from-file", consumes = {"multipart/form-data"})
-    public ResponseEntity<String> ingestFromFile(
+    @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
+    public ResponseEntity<Map<String, Object>> ingestFromFile(
             @RequestPart("file") MultipartFile file,
-            @RequestParam("tableName") String tableName,
-            @RequestPart("config") ClickHouseProperties props,
-            @RequestPart("headers") List<String> selectedHeaders,
-            @RequestPart(value = "types", required = false) Map<String, String> types
+            @RequestPart("config") String configJson
     ) {
-        Path tempPath;
-
+        Map<String, Object> response = new HashMap<>();
         try {
-            // ✅ Step 1: Save uploaded file to temp path
-            tempPath = Files.createTempFile("upload_", ".csv");
-            try (InputStream inputStream = file.getInputStream();
-                 OutputStream outStream = Files.newOutputStream(tempPath, StandardOpenOption.WRITE)) {
-                inputStream.transferTo(outStream);
-            }
+            // Parse the config JSON string to UploadConfig POJO
+            ObjectMapper mapper = new ObjectMapper();
+            UploadConfig request = mapper.readValue(configJson, UploadConfig.class);
 
-            // ✅ Step 2: Set up services
-            ClickHouseService clickHouseService = new ClickHouseService(props);
+            // Setting up services
+            ClickHouseService clickHouseService = new ClickHouseService(request.getConnection());
             IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            if (types != null)
-                clickHouseService.createTable(types, tableName);
+            if (request.isCreateNewTable())
+                clickHouseService.createTable(request.getTableName(), request.getColumnTypes());
 
-            // ✅ Step 4: Ingest only selected columns from CSV stream
-            try (InputStream ingestionStream = Files.newInputStream(tempPath)) {
-                ingestionService.ingestDataFromStream(tableName, ingestionStream, selectedHeaders);
+            long lines;
+            // Ingest only selected columns from CSV stream
+            try (InputStream ingestionStream = file.getInputStream()) {
+                lines = ingestionService.ingestDataFromStream(
+                        request.getTableName(),
+                        new ArrayList<>(request.getColumnTypes().keySet()),
+                        request.getDelimiter(),
+                        ingestionStream);
             }
 
-            // ✅ Step 5: Clean up temp file
-            Files.deleteIfExists(tempPath);
+            response.put("lines", lines);
+            response.put("success", true);
+            response.put("message", "Upload successful");
 
-            return ResponseEntity.ok("✅ File uploaded and ingested into ClickHouse table: " + tableName);
-
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.internalServerError()
-                    .body("❌ Error uploading file: " + e.getMessage());
-        }
-    }
-
-
-    @PostMapping("/preview")
-    public ResponseEntity<List<String[]>> previewData(@RequestBody IngestRequest request) {
-        try {
-            ClickHouseService clickHouseService = new ClickHouseService(request.getProperties());
-            List<String[]> rows = clickHouseService.fetchDataWithLimit(request.getTableName(), request.getColumns(), 100);
-
-            return ResponseEntity.ok(rows);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    @PostMapping(value = "/preview-csv", consumes = {"multipart/form-data"})
-    public ResponseEntity<Map<String, Object>> previewCSV(
-            @RequestPart("file") MultipartFile file,
-            @RequestPart("config") ClickHouseProperties props
-    ) {
-        try {
-            // Read headers and preview rows
-            ClickHouseService clickHouseService = new ClickHouseService(props);
-
-            List<String[]> rows = FileService.readCsvRows(file.getInputStream(), clickHouseService.getDelimiter(), 101);
-            if (rows.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "No rows found"));
-            }
-
-            String[] headers = rows.getFirst();
-            List<String[]> data = rows.subList(1, rows.size());
-
-            return ResponseEntity.ok(Map.of(
-                    "headers", headers,
-                    "data", data
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to preview: " + e.getMessage()));
+            response.put("lines", 0);
+            response.put("success", false);
+            response.put("message", "Error: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
 
     @PostMapping("/types")
-    public List<String> getTypes(@RequestBody ClickHouseProperties props) {
-        ClickHouseService clickHouseService = new ClickHouseService(props);
-        return clickHouseService.getTypes();
+    public ResponseEntity<Map<String, ArrayList<String>>>  getTypes(@RequestBody TypesConfig typesConfig) {
+        ClickHouseService clickHouseService = new ClickHouseService(typesConfig.getConnection());
+        return ResponseEntity.ok(Collections.singletonMap("types", clickHouseService.getTypes()));
     }
 }

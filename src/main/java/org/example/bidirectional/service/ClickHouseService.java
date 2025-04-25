@@ -5,26 +5,22 @@ import com.clickhouse.client.api.query.QueryResponse;
 import com.clickhouse.client.api.query.QuerySettings;
 import com.clickhouse.data.ClickHouseFormat;
 import com.opencsv.CSVReader;
-import org.example.bidirectional.config.ClickHouseProperties;
+import org.example.bidirectional.config.ConnectionConfig;
 import org.example.bidirectional.exception.AuthenticationException;
-import org.springframework.stereotype.Service;
+import org.example.bidirectional.model.ColumnInfo;
+import org.example.bidirectional.model.JoinTable;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Future;
 
-@Service
 public class ClickHouseService {
     private final Client client;
-    private final char delimiter;
     private final String database;
-    private static List<String> types = null;
+    private static ArrayList<String> types = null;
 
-    private static char convertStringToChar(String input) {
+    public static char convertStringToChar(String input) {
         if (input == null || input.isEmpty()) {
             throw new IllegalArgumentException("Input must be a non-empty string");
         }
@@ -42,8 +38,7 @@ public class ClickHouseService {
         };
     }
 
-    public ClickHouseService(ClickHouseProperties props) {
-        this.delimiter = convertStringToChar(props.getDelimiter());
+    public ClickHouseService(ConnectionConfig props) {
         this.database = props.getDatabase().trim();
 
         var cb = new Client.Builder()
@@ -55,19 +50,23 @@ public class ClickHouseService {
 
         // ✅ Prefer JWT token if provided
         try {
-            if (props.getProtocol() != null) {
-                if (props.getProtocol().equalsIgnoreCase("http")) {
-                    cb.addEndpoint("http://" + props.getHost() + ":" + props.getPort());
-                } else if (props.getProtocol().equalsIgnoreCase("https")) {
-                    cb.addEndpoint("https://" + props.getHost() + ":" + props.getPort());
-                }
-            } else {
-                throw new AuthenticationException("Please specify a protocol");
+            String host = props.getHost();
+
+            if (props.getProtocol().equalsIgnoreCase("http")) {
+                if (!host.startsWith("http://"))
+                    host = "http://" + host;
+
+                cb.addEndpoint(host + ":" + props.getPort());
+            } else if (props.getProtocol().equalsIgnoreCase("https")) {
+                if (!host.startsWith("https://"))
+                    host = "https://" + host;
+
+                cb.addEndpoint(host + ":" + props.getPort());
             }
 
-            if (props.getJwtToken() != null && !props.getJwtToken().isEmpty()) {
-                this.client = cb.setAccessToken(props.getJwtToken()).build();
-            } else if (props.getPassword() != null) {
+            if (props.getAuthType().equalsIgnoreCase("jwt")) {
+                this.client = cb.setAccessToken(props.getJwt()).build();
+            } else if (props.getAuthType().equalsIgnoreCase("password")) {
                 this.client = cb.setPassword(props.getPassword()).build();
             } else {
                 throw new AuthenticationException("Invalid credentials or token.");
@@ -80,6 +79,10 @@ public class ClickHouseService {
             }
             throw new RuntimeException("Failed to connect to ClickHouse: " + e.getMessage(), e);
         }
+    }
+
+    public boolean testConnection() {
+        return client.ping();
     }
 
     /**
@@ -112,14 +115,29 @@ public class ClickHouseService {
         return getListFromResponse("SHOW TABLES FROM " + database);
     }
 
-    public List<String> getColumns(String tableName) {
-        String sql = String.format("SELECT name FROM system.columns WHERE database = '%s' AND table = '%s';",
+    public List<ColumnInfo> getColumns(String tableName) {
+        String sql = String.format("SELECT name, type FROM system.columns WHERE database = '%s' AND table = '%s';",
                 database, tableName);
 
-        return getListFromResponse(sql);
+        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSV);
+        Future<QueryResponse> response = client.query(sql, settings);
+
+        try (QueryResponse qr = response.get();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(qr.getInputStream()));
+             CSVReader csvReader = new CSVReader(reader)) {
+            List<ColumnInfo> names = new ArrayList<>();
+
+            String[] row;
+            while ((row = csvReader.readNext()) != null)
+                names.add(new ColumnInfo(row[0], row[1]));
+
+            return names;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to fetch data from ClickHouse: " + e.getMessage(), e);
+        }
     }
 
-    public List<String> getTypes() {
+    public ArrayList<String> getTypes() {
         if (types != null) {
             return types;
         }
@@ -128,20 +146,22 @@ public class ClickHouseService {
                      "UNION DISTINCT " +
                      "SELECT alias_to AS name FROM system.data_type_families WHERE name != '';";
 
-        types = getListFromResponse(sql);
-        Collections.sort(types);
+        types = (ArrayList<String>) getListFromResponse(sql);
 
+        types.remove("String");
+        Collections.sort(types);
         types.addFirst("String");
 
         return types;
     }
 
-    public void createTable(Map<String, String> headers, String tableName) throws Exception {
+    public void createTable(String tableName, Map<String, String> types) throws Exception {
         // Construct a CREATE TABLE query based on the headers
-        int i = headers.size() - 1;
-        StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS `" + tableName + "` (");
-        for (Map.Entry<String, String> e : headers.entrySet()) {
-            createTableQuery.append('`').append(e.getKey()).append("` ").append(e.getValue());
+        int i = types.size() - 1;
+
+        StringBuilder createTableQuery = new StringBuilder("CREATE TABLE IF NOT EXISTS " + quote(tableName) + " (");
+        for (Map.Entry<String, String> e : types.entrySet()) {
+            createTableQuery.append(quote(e.getKey())).append(' ').append(e.getValue());
 
             if (i > 0)
                 createTableQuery.append(", ");
@@ -159,7 +179,7 @@ public class ClickHouseService {
      * returns the result as a list of String arrays.
      */
     private List<String[]> fetchDataHelper(String sql) throws Exception {
-        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSV);
+        QuerySettings settings = new QuerySettings().setFormat(ClickHouseFormat.CSVWithNames);
 
         Future<QueryResponse> response = client.query(sql, settings);
 
@@ -170,46 +190,58 @@ public class ClickHouseService {
         }
     }
 
-    /**
-     * Fetches data from the given table and columns, and returns the rows as a list of String arrays.
-     * The response is expected in CSVWithNames format, and the header row is skipped.
-     *
-     * @param tableName the name of the table
-     * @param columns   list of columns to fetch
-     * @return a list of rows (each row as String[]), excluding the header row
-     * @throws Exception if an error occurs during the query or reading the data
-     */
-    public List<String[]> fetchData(String tableName, List<String> columns) throws Exception {
-        StringBuilder sb = new StringBuilder("SELECT ");
-        for (int i = 0; i < columns.size(); i++) {
-            sb.append('`').append(columns.get(i)).append('`');
-            if (i < columns.size() - 1) sb.append(',');
-        }
-
-        sb.append(" FROM `").append(tableName).append('`');
-        return fetchDataHelper(sb.toString());
+    protected static String quote(String name) {
+        return "`" + name.replace("`", "``") + "`";
     }
 
-    public List<String[]> fetchDataWithLimit(String tableName, List<String> columns, int limit) throws Exception {
-        StringBuilder sb = new StringBuilder("SELECT ");
+    /**
+     * Builds the query with proper joins. THe query is joined as a complete default should add
+     * condition to the string (if you want) before executing
+     */
+    public String getJoinedQuery(String tableName, List<String> columns, List<JoinTable> joins) {
+        // Build the SQL query string
+        StringBuilder queryBuilder = new StringBuilder();
+        queryBuilder.append("SELECT ");
         for (int i = 0; i < columns.size(); i++) {
-            sb.append('`').append(columns.get(i)).append('`');
-            if (i < columns.size() - 1) sb.append(',');
+            if (columns.get(i).contains(".")) {
+                String[] column = columns.get(i).split("\\.");
+                queryBuilder.append(quote(column[0]));
+                queryBuilder.append(".");
+                queryBuilder.append(quote(column[1]));
+            } else {
+                queryBuilder.append(quote(columns.get(i)));
+            }
+
+            if (i < columns.size() - 1) queryBuilder.append(',');
+        }
+        queryBuilder.append(" FROM `").append(tableName).append('`');
+
+        if (joins != null && !joins.isEmpty()) {
+            for (JoinTable jt : joins) {
+                queryBuilder.append(" ")
+                        .append(jt.getJoinType()).append(" ")
+                        .append(quote(jt.getTableName())).append(" ON ")
+                        .append(quote(tableName)).append(".").append(quote(jt.getSourceColumn()))
+                        .append(" = ")
+                        .append(quote(jt.getTableName())).append(".").append(quote(jt.getTargetColumn()));
+            }
         }
 
-        sb.append(" FROM `").append(tableName).append("` LIMIT ").append(limit);
-        return fetchDataHelper(sb.toString());
+        return queryBuilder.toString();
+    }
+
+    public List<String[]> querySelectedColumns(
+            String tableName,
+            List<String> columns,
+            List<JoinTable> joins,
+            String delimiter
+    ) throws Exception {
+        String sql = getJoinedQuery(tableName, columns, joins);
+
+        return fetchDataHelper(sql + " LIMIT 100");
     }
 
     public Client getClient() {
         return client;
-    }
-
-    public char getDelimiter() {
-        return delimiter;
-    }
-
-    public String getDatabase() {
-        return database;
     }
 }

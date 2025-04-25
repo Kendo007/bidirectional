@@ -5,7 +5,8 @@ import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import com.opencsv.CSVWriter;
 import com.opencsv.exceptions.CsvException;
-import com.opencsv.exceptions.CsvValidationException;
+import com.univocity.parsers.csv.CsvParser;
+import com.univocity.parsers.csv.CsvParserSettings;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -35,22 +36,27 @@ public class FileService {
         }
     }
 
-    public static List<String[]> readCsvRows(InputStream inputStream, char delimiter, int limit) throws IOException {
+    public static List<String[]> readCsvRows(InputStream inputStream, String delimiter) {
         List<String[]> data = new ArrayList<>();
 
-        // Read header with the first stream
-        try (CSVReader reader = new CSVReaderBuilder(new InputStreamReader(inputStream))
-                .withCSVParser(new CSVParserBuilder().withSeparator(delimiter).build())
-                .build()) {
-            String[] row;
-            while ((row = reader.readNext()) != null && limit >= 0) {
-                data.add(row);
-                --limit;
-            }
+        CsvParserSettings parserSettings = new CsvParserSettings();
+        parserSettings.setHeaderExtractionEnabled(true);
+        parserSettings.getFormat().setDelimiter(ClickHouseService.convertStringToChar(delimiter));
 
-            return data;
-        } catch (CsvValidationException e) {
-            throw new RuntimeException(e);
+        CsvParser parser = new CsvParser(parserSettings);
+        parser.beginParsing(new BufferedReader(new InputStreamReader(inputStream)));
+
+        try {
+            data.add(parser.getContext().headers());
+
+            String[] row;
+            while ((row = parser.parseNext()) != null) {
+                data.add(row);
+            }
+        } finally {
+            parser.stopParsing();
         }
+
+        return data;
     }
 }

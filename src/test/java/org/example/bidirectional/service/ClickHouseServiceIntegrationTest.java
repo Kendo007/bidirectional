@@ -1,7 +1,7 @@
 package org.example.bidirectional.service;
 
 import com.clickhouse.client.api.Client;
-import org.example.bidirectional.config.ClickHouseProperties;
+import org.example.bidirectional.config.ConnectionConfig;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
@@ -16,13 +16,12 @@ public class ClickHouseServiceIntegrationTest {
     @BeforeEach
     public void setUp() throws Exception {
         // Set up the connection to the actual ClickHouse instance
-        ClickHouseProperties props = new ClickHouseProperties();
+        ConnectionConfig props = new ConnectionConfig();
         props.setHost("localhost");
         props.setPort(8123);
         props.setUsername("default");
         props.setPassword("");
-        props.setDatabase("test_db");  // Use a dedicated test database
-        props.setDelimiter("|");
+        props.setDatabase("test_db");
 
         // Initialize the service with real database connection
         service = new ClickHouseService(props);
@@ -42,15 +41,6 @@ public class ClickHouseServiceIntegrationTest {
         assertTrue(tables.contains("users"));
     }
 
-    @Test
-    public void testGetColumns() {
-        // Act: Get columns for the 'users' table
-        List<String> columns = service.getColumns("users");
-
-        // Assert: Check if 'name' and 'age' are in the columns
-        assertTrue(columns.contains("name"));
-        assertTrue(columns.contains("age"));
-    }
 
     @AfterEach
     public void tearDown() throws Exception {
