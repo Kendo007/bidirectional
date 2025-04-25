@@ -5,10 +5,12 @@ import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import com.opencsv.CSVWriter;
 import com.opencsv.exceptions.CsvException;
+import com.univocity.parsers.csv.CsvParser;
+import com.univocity.parsers.csv.CsvParserSettings;
 import org.springframework.stereotype.Service;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+
+import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -34,4 +36,27 @@ public class FileService {
         }
     }
 
+    public static List<String[]> readCsvRows(InputStream inputStream, String delimiter) {
+        List<String[]> data = new ArrayList<>();
+
+        CsvParserSettings parserSettings = new CsvParserSettings();
+        parserSettings.setHeaderExtractionEnabled(true);
+        parserSettings.getFormat().setDelimiter(ClickHouseService.convertStringToChar(delimiter));
+
+        CsvParser parser = new CsvParser(parserSettings);
+        parser.beginParsing(new BufferedReader(new InputStreamReader(inputStream)));
+
+        try {
+            data.add(parser.getContext().headers());
+
+            String[] row;
+            while ((row = parser.parseNext()) != null) {
+                data.add(row);
+            }
+        } finally {
+            parser.stopParsing();
+        }
+
+        return data;
+    }
 }

@@ -1,7 +1,7 @@
 package org.example.bidirectional.service;
 
 import com.clickhouse.client.api.Client;
-import org.example.bidirectional.config.ClickHouseProperties;
+import org.example.bidirectional.config.ConnectionConfig;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
@@ -16,13 +16,12 @@ public class ClickHouseServiceIntegrationTest {
     @BeforeEach
     public void setUp() throws Exception {
         // Set up the connection to the actual ClickHouse instance
-        ClickHouseProperties props = new ClickHouseProperties();
+        ConnectionConfig props = new ConnectionConfig();
         props.setHost("localhost");
         props.setPort(8123);
         props.setUsername("default");
         props.setPassword("");
-        props.setDatabase("test_db");  // Use a dedicated test database
-        props.setDelimiter("|");
+        props.setDatabase("test_db");
 
         // Initialize the service with real database connection
         service = new ClickHouseService(props);
@@ -34,23 +33,7 @@ public class ClickHouseServiceIntegrationTest {
     }
 
     @Test
-    public void testFetchDataAndProcess() throws Exception {
-        // Insert some test data into the table
-        client.query("INSERT INTO test_db.users VALUES ('Alice', 30), ('Bob', 25)").get();
-
-        // Act: Fetch data from the database and process it
-        List<String> columns = List.of("name", "age");
-        service.fetchDataAndProcess("users", columns, row -> {
-            assertNotNull(row);
-            assertTrue(row.length == 2);
-            assertNotNull(row[0]); // Check if name is not null
-            assertNotNull(row[1]); // Check if age is not null
-            System.out.println("Processed row: " + String.join(", ", row));
-        });
-    }
-
-    @Test
-    public void testListTables() throws Exception {
+    public void testListTables() {
         // Act: Fetch the list of tables from the database
         List<String> tables = service.listTables();
 
@@ -58,15 +41,6 @@ public class ClickHouseServiceIntegrationTest {
         assertTrue(tables.contains("users"));
     }
 
-    @Test
-    public void testGetColumns() throws Exception {
-        // Act: Get columns for the 'users' table
-        List<String> columns = service.getColumns("users");
-
-        // Assert: Check if 'name' and 'age' are in the columns
-        assertTrue(columns.contains("name"));
-        assertTrue(columns.contains("age"));
-    }
 
     @AfterEach
     public void tearDown() throws Exception {

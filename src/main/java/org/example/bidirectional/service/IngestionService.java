@@ -1,123 +1,92 @@
 package org.example.bidirectional.service;
 
-import com.opencsv.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+import com.clickhouse.client.api.DataStreamWriter;
+import com.clickhouse.client.api.insert.InsertSettings;
+import com.clickhouse.data.ClickHouseFormat;
+import com.univocity.parsers.csv.CsvParser;
+import com.univocity.parsers.csv.CsvParserSettings;
+import com.univocity.parsers.csv.CsvWriter;
+import com.univocity.parsers.csv.CsvWriterSettings;
+import org.example.bidirectional.config.SelectedColumnsQueryConfig;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
-@Service
+import static org.example.bidirectional.service.ClickHouseService.quote;
+
 public class IngestionService {
 
     private final ClickHouseService clickHouseService;
 
-    @Autowired
     public IngestionService(ClickHouseService clickHouseService) {
         this.clickHouseService = clickHouseService;
     }
 
-    /**
-     * Ingest data from ClickHouse into a CSV file.
-     *
-     * @param tableName  The table name.
-     * @param columns    The columns to fetch.
-     * @param outputPath The output file path.
-     */
-    public void ingestDataToFile(String tableName, List<String> columns, Path outputPath) {
-        // Create a CSVWriter instance directly
-        try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+    public long ingestDataFromStream(
+            String tableName,
+            List<String> headers,
+            String delimiter,
+            InputStream inputStream
+    ) throws Exception {
+        AtomicLong lines = new AtomicLong();
 
-            CSVWriter csvWriter = new CSVWriter(writer,
-                    clickHouseService.delimiter,
-                    CSVWriter.NO_QUOTE_CHARACTER,
-                    CSVWriter.DEFAULT_ESCAPE_CHARACTER,
-                    CSVWriter.DEFAULT_LINE_END);
+        DataStreamWriter writer = outputStream -> {
+            int bufferSize = 131072; // 128 KB buffer size
 
-            clickHouseService.fetchDataAndProcess(tableName, columns, row -> {
-                    // Write the current row to CSV
-                    csvWriter.writeNext(row);
-                    csvWriter.flush();
-            }
-            );
+            CsvParserSettings parserSettings = new CsvParserSettings();
+            parserSettings.setHeaderExtractionEnabled(true);
+            parserSettings.getFormat().setDelimiter(ClickHouseService.convertStringToChar(delimiter));
+            parserSettings.selectFields(headers.toArray(new String[0]));
+            parserSettings.setInputBufferSize(bufferSize);
 
-            csvWriter.close();
-        } catch (Exception e) {
-            throw new RuntimeException("Error writing row to CSV file", e);
-        }
-    }
+            CsvParser parser = new CsvParser(parserSettings);
+            parser.beginParsing(new BufferedReader(new InputStreamReader(inputStream), bufferSize));
 
-    /**
-     * Ingests data from a CSV file into a ClickHouse table.
-     * Generates a single INSERT statement that batches multiple rows.
-     *
-     * @param tableName the target table name
-     * @param inputPath the CSV file path
-     * @throws Exception if an error occurs during reading or data ingestion
-     */
-    public void ingestDataFromFile(String tableName, Path inputPath) throws Exception {
-        List<String> tables = clickHouseService.listTables();
+            CsvWriterSettings writerSettings = new CsvWriterSettings();
+            CsvWriter csvWriter = new CsvWriter(new BufferedWriter(new OutputStreamWriter(outputStream), bufferSize), writerSettings);
 
-        // SQL template to be used for a batched insert query.
-        String sqlTemplate = "INSERT INTO " + tableName + " VALUES ";
-        int count = 0;
+            try {
+                csvWriter.writeHeaders(parser.getContext().selectedHeaders());
 
-        try (CSVReader csvReader = new CSVReaderBuilder(new FileReader(inputPath.toFile()))
-                .withCSVParser(new CSVParserBuilder().withSeparator(clickHouseService.delimiter).build())
-                .build()) {
-
-            StringBuilder sb = new StringBuilder(sqlTemplate);
-
-            String[] headers = csvReader.readNext();
-            if (headers == null) {
-                throw new RuntimeException("Headers are missing in the CSV file.");
-            }
-
-            if (tables.isEmpty() || !tables.contains(tableName)) {
-                clickHouseService.createTable(headers, tableName);
-            }
-
-            String[] row;
-            while ((row = csvReader.readNext()) != null) {
-                // Create an individual row as a tuple: ('value1', 'value2', ...)
-                String rowValues = "(" +
-                        String.join(",", Arrays.stream(row)
-                                .map(value -> "'" + value.replace("'", "''") + "'")
-                                .toArray(String[]::new))
-                        + ")";
-                sb.append(rowValues).append(',');
-
-                // Execute batch every 1000 rows
-                if (count >= 1000) {
-                    executeBatch(sb.deleteCharAt(sb.length() - 1).append(';').toString());
-                    sb.setLength(0);
-                    sb.append(sqlTemplate);
-                    count = 0;
+                String[] row;
+                while ((row = parser.parseNext()) != null) {
+                    lines.incrementAndGet();
+                    csvWriter.writeRow((Object[]) row);
                 }
-
-                ++count;
+            } finally {
+                parser.stopParsing();
+                csvWriter.close(); // Proper manual close
             }
+        };
 
-            // Execute any remaining rows
-            if (count > 0) {
-                executeBatch(sb.deleteCharAt(sb.length() - 1).append(';').toString());
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Error reading CSV file", e);
+        InsertSettings settings = new InsertSettings()
+                .serverSetting("input_format_with_names_use_header", "1")
+                .serverSetting("input_format_skip_unknown_fields", "1");
+
+        clickHouseService.getClient()
+                .insert(quote(tableName), writer, ClickHouseFormat.CSVWithNames, settings)
+                .get();
+
+        return lines.get();
+    }
+
+    public void streamDataToOutputStream(
+            SelectedColumnsQueryConfig config,
+            OutputStream outputStream) throws Exception {
+
+        String sql =
+                clickHouseService.getJoinedQuery(config.getTableName(), config.getColumns(), config.getJoinTables())   // Getting joined query
+                + " FORMAT CSVWithNames SETTINGS format_csv_delimiter = '"
+                + ClickHouseService.convertStringToChar(config.getDelimiter()) + "';";
+
+        var response = clickHouseService.getClient()
+                .query(sql)
+                .get();
+
+        try (InputStream csvStream = response.getInputStream()) {
+            csvStream.transferTo(outputStream);
+            outputStream.flush();
         }
     }
-
-    /**
-     * Executes a batched INSERT query that combines multiple row values in one statement.
-     * @throws Exception if an error occurs during query execution
-     */
-    private void executeBatch(String fullQuery) throws Exception {
-        // Execute the query synchronously
-        clickHouseService.getClient().query(fullQuery).get();
-    }
-
 }
