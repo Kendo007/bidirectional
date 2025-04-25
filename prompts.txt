@@ -5,25 +5,77 @@
 - "What does CANNOT_PARSE_INPUT_ASSERTION_FAILED mean in ClickHouse?"
 - "How to validate uploaded CSV rows before inserting into ClickHouse?"
 - "Show me how to sanitize column names for SQL safety in Java"
+- "How to parse CSV files with tab delimiter in univocity-parsers?"
+- "How to fix Content-Length showing wrong blob size in frontend?"
 
 ## 🚀 Features & Enhancements
 - "Add gzip compression to download stream in Spring Boot"
 - "Implement CSV preview for first N rows in uploaded file"
 - "Generate ClickHouse CREATE TABLE SQL from a CSV header in Java"
+- "Track upload/download progress in real-time with MB and percentage"
+- "Enable user to select columns and data types before upload"
+- "Use Axios instead of XMLHttpRequest with TypeScript for large file upload/download"
+- "Stream large file directly from memory to ClickHouse insert API"
 
 ## 🔒 Authentication & Security
 - "How to throw AuthenticationException if ClickHouse credentials are invalid?"
 - "How to structure global exception handling in Spring Boot?"
+- "Support JWT and password-based auth and sanitize config before sending to backend"
 
 ## 🖼️ Frontend (React)
 - "How to show real upload/download progress in MB using Axios?"
 - "Add a progress bar for file uploads and downloads in React"
 - "Create a React modal to preview a CSV table with scrollable layout"
+- "How to dynamically enable/disable columns for CSV preview?"
+- "Use Vite environment variables correctly for dynamic backend URLs"
+- "Display `Uploading`, `Processing`, or `Preview Data` based on progress state"
+- "Fix missing environment variable issues in Vite with `.env` setup"
 
 ## 🧱 Project Structure
 - "What is a production-ready folder structure for a Spring Boot + React app?"
 - "How to split App.js into reusable components?"
+- "How to remove Express mock server and route traffic only to Spring Boot?"
 
 ## 🧠 Advanced
 - "How to stream large CSV file from ClickHouse to frontend without saving to disk?"
 - "Simulate download progress when Content-Length is missing"
+- "Optimize buffer sizes for ingesting 10GB files"
+- "What buffer sizes should I use for 100MB, 1GB, 10GB file upload?"
+- "Use `StreamingResponseBody` efficiently with large file sizes"
+- "How to do async ingestion with ClickHouse Java client?"
+- "Can I parse and write line-by-line using BufferedReader or should I batch?"
+- "What’s better: line-by-line vs buffered streaming with Univocity for 10GB files?"
+- "How to properly parse `@RequestPart` multipart request containing JSON + File?"
+- "How to configure `application.properties` for large multipart uploads?"
+
+## 🖱️ UI Flow Requests from Replit
+- i just want a website that gives a user two options to upload and download from clickhouse
+-
+- in each option open a page which ask for protocol in a drop down (http/https) then the host (localhost) port username password
+- in the configuration page added a option to eather use password or the jwt token
+- let's continue with the download section show the next page which fetches data from a backend using /tables apui
+- Things I want you to change:-
+-
+- In the first page instead of giving a Get Started on both upload and download make it that clicking on the div selects it and then give a next/continue button.
+- In the download page do not give the SQL Query text and do not give a download format drop-down instead give a delimeter text box which accepts one character.
+- Clicking on a particular table loads fetches and displays all it's column and their datatypes from /columns endpoint with configs
+- From the columns user should be able to select the columns from a checkbox and clicking on the preview button sends a payload which contains tablename, selectedcols and all the configs
+- Add a checkbox Multiple tables which opens a section allowing users to selectas many tables as he like using Add table button in each selection give user a drop-down of tables than a drop down of joins Inner Join, left Join, right, outer than already written ON than drop-down of all the columns from the main sleected table and then written = and then a drop-down of all columns from the added table
+- Once the columns are requested from the backend cache them until the user either moves to the next or previous page
+- In the upload page also give the user to preview data of his uploaded csv file also ask for a delimeter there. Also show them all the existing tables and a checkbox if they want to create a new table if yes than ask for its name.
+- More Changes :-
+-
+- Remove the database tables section on the left from both the upload/download page.
+- In the download page Move main table drop down to the top then after selecting show the available columns than the use Multiple tables section.
+- In the use multiple table section show the config in one line like they appear in an SQL query.
+- Than the delimeter button should be showed also add a select all/deselect all buttton.
+- All the previews should be shown as a pop-up
+- In the upload page too after parsing csv show all the columns parsed and give a checkbox to user if they want to upload that column. if creating a new table give a drop down and show all the data-types. THe data-types should be fetched from /types endpoint on only the first successful connection and be cached in the page until it is closed.
+- Okay so when i will and download a file it should show me a progress button which shows the percentage and the amout of data/uploaded also it should show the total file size in case of upload we can easily calculate in frontend.
+- In case of download when clicked on download results button the reuest is sent to /api/clickhouse/download endpoint and it return the data with content-length and type so make sure to show it too
+- Make a seprate section for showing the progress bars and do not show seprate bars for percentage and size instead make the size appear on the left like 90 (mb or kb or gb) / total size and on the right show the percentage show the bar in a very clear way which appears above the download results/upload to clickhouse button button keep the inside color of the bar blue as the theme
+- Also the change the icon which appears beside the main header "Clickhouse Data Manager" to <-> something like this and change the title to Clickhouse <-> FlatFile
+- You have made the nae cheanges to the wrong place I wanted you to change the main heading which says "Clickhouse Data Manager" and the icon beside it.
+- THe main page title looks fine but in the upload and download page only keep upload/download to clickhouse as heading in both upload and download button after the process is finished show the line count of amount of data uploaded/downloaded
+
+---
