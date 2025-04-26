@@ -1,6 +1,5 @@
 package org.example.bidirectional;
 
-import org.example.bidirectional.service.ClickHouseService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 

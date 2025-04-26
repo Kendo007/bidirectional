@@ -1,5 +1,6 @@
 package org.example.bidirectional.controller;
 
+import jakarta.annotation.PostConstruct;
 import org.example.bidirectional.config.*;
 import org.example.bidirectional.exception.AuthenticationException;
 import org.example.bidirectional.model.ColumnInfo;
@@ -13,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -24,6 +26,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @RestController
 @RequestMapping("/api/clickhouse")
 public class IngestionController {
+    @Value("${config.frontend}")
+    private String frontendUrl;
+
+    @PostConstruct
+    public void init() {
+        System.out.println("Ensure FrontEnd is running on: " + frontendUrl);
+    }
+
     @PostMapping("/test-connection")
     public ResponseEntity<?> testConnection(@RequestBody ConnectionConfig props) {
         try {
