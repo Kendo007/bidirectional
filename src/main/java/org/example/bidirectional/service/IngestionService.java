@@ -11,7 +11,6 @@ import org.example.bidirectional.config.SelectedColumnsQueryConfig;
 
 import java.io.*;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.example.bidirectional.service.ClickHouseService.quote;
 
@@ -24,19 +23,20 @@ public class IngestionService {
     }
 
     public long ingestDataFromStream(
+            Integer totalCols,
             String tableName,
             List<String> headers,
             String delimiter,
             InputStream inputStream
     ) throws Exception {
-        AtomicLong lines = new AtomicLong();
+        char delimiterChar = ClickHouseService.convertStringToChar(delimiter);
 
         DataStreamWriter writer = outputStream -> {
             int bufferSize = 131072; // 128 KB buffer size
 
             CsvParserSettings parserSettings = new CsvParserSettings();
             parserSettings.setHeaderExtractionEnabled(true);
-            parserSettings.getFormat().setDelimiter(ClickHouseService.convertStringToChar(delimiter));
+            parserSettings.getFormat().setDelimiter(delimiterChar);
             parserSettings.selectFields(headers.toArray(new String[0]));
             parserSettings.setInputBufferSize(bufferSize);
 
@@ -51,7 +51,6 @@ public class IngestionService {
 
                 String[] row;
                 while ((row = parser.parseNext()) != null) {
-                    lines.incrementAndGet();
                     csvWriter.writeRow((Object[]) row);
                 }
             } finally {
@@ -64,11 +63,19 @@ public class IngestionService {
                 .serverSetting("input_format_with_names_use_header", "1")
                 .serverSetting("input_format_skip_unknown_fields", "1");
 
-        clickHouseService.getClient()
-                .insert(quote(tableName), writer, ClickHouseFormat.CSVWithNames, settings)
-                .get();
+        if (headers.size() == totalCols && !Character.isWhitespace(delimiterChar)) {
+            settings.serverSetting("format_csv_delimiter", delimiter);
 
-        return lines.get();
+            clickHouseService.getClient()
+                    .insert(quote(tableName), inputStream, ClickHouseFormat.CSVWithNames, settings)
+                    .get();
+        } else {
+            clickHouseService.getClient()
+                    .insert(quote(tableName), writer, ClickHouseFormat.CSVWithNames, settings)
+                    .get();
+        }
+
+        return clickHouseService.getTotalRows(tableName);
     }
 
     public void streamDataToOutputStream(

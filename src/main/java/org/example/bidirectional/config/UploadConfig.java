@@ -3,6 +3,7 @@ package org.example.bidirectional.config;
 import java.util.Map;
 
 public class UploadConfig {
+    private Integer totalCols;
     private ConnectionConfig connection;
     private String tableName;
     private boolean createNewTable = false;
@@ -10,6 +11,14 @@ public class UploadConfig {
     private Map<String, String> columnTypes;
 
     // Getters and Setters
+    public Integer getTotalCols() {
+        return totalCols;
+    }
+
+    public void setTotalCols(Integer totalCols) {
+        this.totalCols = totalCols;
+    }
+
     public ConnectionConfig getConnection() {
         return connection;
     }
