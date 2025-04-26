@@ -59,6 +59,10 @@ public class IngestionService {
             }
         };
 
+        long beforeIngest = clickHouseService.getTotalRows(tableName);
+        if (beforeIngest == 0)
+            --beforeIngest;
+
         InsertSettings settings = new InsertSettings()
                 .serverSetting("input_format_with_names_use_header", "1")
                 .serverSetting("input_format_skip_unknown_fields", "1");
@@ -75,10 +79,10 @@ public class IngestionService {
                     .get();
         }
 
-        return clickHouseService.getTotalRows(tableName);
+        return clickHouseService.getTotalRows(tableName) - beforeIngest;
     }
 
-    public void streamDataToOutputStream(
+    public long streamDataToOutputStream(
             SelectedColumnsQueryConfig config,
             OutputStream outputStream) throws Exception {
 
@@ -95,5 +99,7 @@ public class IngestionService {
             csvStream.transferTo(outputStream);
             outputStream.flush();
         }
+
+        return 1 + clickHouseService.getTotalRows(config.getTableName());
     }
 }

@@ -110,15 +110,14 @@ public class IngestionController {
 
     @PostMapping("/download")
     public ResponseEntity<FileSystemResource> ingestToFile(@RequestBody SelectedColumnsQueryConfig request) throws IOException {
-        Path path;
-
+        long lineCount;
         ClickHouseService clickHouseService = new ClickHouseService(request.getConnection());
         IngestionService ingestionService = new IngestionService(clickHouseService);
 
         // Creating temp file and writing to it
-        path = Files.createTempFile(request.getTableName() + "_export", Math.random() + ".csv");
+        Path path = Files.createTempFile(request.getTableName() + "_export", Math.random() + ".csv");
         try (OutputStream outStream = Files.newOutputStream(path)) {
-            ingestionService.streamDataToOutputStream(request, outStream);
+            lineCount = ingestionService.streamDataToOutputStream(request, outStream);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -129,7 +128,8 @@ public class IngestionController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + cleanFilename)
-                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Content-Length")
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Content-Length", "X-Line-Count")
+                .header("X-Line-Count", String.valueOf(lineCount))
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .contentLength(resource.contentLength())
                 .body(resource);
