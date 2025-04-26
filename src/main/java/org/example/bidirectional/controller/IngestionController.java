@@ -67,7 +67,7 @@ public class IngestionController {
     }
 
     @PostMapping("/query-selected-columns")
-    public ResponseEntity<Map<String, Object>> querySelectedColumns(@RequestBody SelectedColumnsQueryConfig config) {
+    public ResponseEntity<Map<String, Object>> querySelectedColumns(@RequestBody SelectedColumnsQueryConfig config) throws Exception {
         try {
             ClickHouseService clickHouseService = new ClickHouseService(config.getConnection());
 
@@ -81,9 +81,7 @@ public class IngestionController {
             // Build response: first row is headers, remaining rows are data
             return getHeadAndData(rows);
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to query selected columns: " + e.getMessage()));
+            throw new Exception("Failed to query selected columns.");
         }
     }
 
@@ -91,44 +89,40 @@ public class IngestionController {
     public ResponseEntity<Map<String, Object>> previewCSV(
             @RequestPart("file") MultipartFile file,
             @RequestParam(value = "delimiter", defaultValue = ",") String delimiter
-    ) {
+    ) throws Exception {
         try {
             List<String[]> rows = FileService.readCsvRows(file.getInputStream(), delimiter);
             return getHeadAndData(rows);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to preview: " + e.getMessage()));
+            throw new Exception("Failed to preview CSV. Please check if file exists.");
         }
     }
 
     @PostMapping("/download")
-    public ResponseEntity<FileSystemResource> ingestToFile(@RequestBody SelectedColumnsQueryConfig request) {
+    public ResponseEntity<FileSystemResource> ingestToFile(@RequestBody SelectedColumnsQueryConfig request) throws IOException {
         Path path;
-        try {
-            ClickHouseService clickHouseService = new ClickHouseService(request.getConnection());
-            IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            // Creating temp file and writing to it
-            path = Files.createTempFile(request.getTableName() + "_export", Math.random() + ".csv");
-            try (OutputStream outStream = Files.newOutputStream(path)) {
-                ingestionService.streamDataToOutputStream(request, outStream);
-            }
+        ClickHouseService clickHouseService = new ClickHouseService(request.getConnection());
+        IngestionService ingestionService = new IngestionService(clickHouseService);
 
-            // Creating fileSystemResource for downloading
-            FileSystemResource resource = getFileSystemResource(path);
-            String cleanFilename = request.getTableName().replaceAll("[^a-zA-Z0-9-_]", "_") + ".csv";
-
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + cleanFilename)
-                    .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Content-Length")
-                    .contentType(MediaType.parseMediaType("text/csv"))
-                    .contentLength(resource.contentLength())
-                    .body(resource);
-
+        // Creating temp file and writing to it
+        path = Files.createTempFile(request.getTableName() + "_export", Math.random() + ".csv");
+        try (OutputStream outStream = Files.newOutputStream(path)) {
+            ingestionService.streamDataToOutputStream(request, outStream);
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.internalServerError().build();
+            throw new RuntimeException(e);
         }
+
+        // Creating fileSystemResource for downloading
+        FileSystemResource resource = getFileSystemResource(path);
+        String cleanFilename = request.getTableName().replaceAll("[^a-zA-Z0-9-_]", "_") + ".csv";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + cleanFilename)
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition, Content-Length")
+                .contentType(MediaType.parseMediaType("text/csv"))
+                .contentLength(resource.contentLength())
+                .body(resource);
     }
 
     private static FileSystemResource getFileSystemResource(Path path) {
@@ -172,6 +166,7 @@ public class IngestionController {
             // Ingest only selected columns from CSV stream
             try (InputStream ingestionStream = file.getInputStream()) {
                 lines = ingestionService.ingestDataFromStream(
+                        request.getTotalCols(),
                         request.getTableName(),
                         new ArrayList<>(request.getColumnTypes().keySet()),
                         request.getDelimiter(),

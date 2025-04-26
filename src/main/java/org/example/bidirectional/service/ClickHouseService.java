@@ -41,15 +41,14 @@ public class ClickHouseService {
     public ClickHouseService(ConnectionConfig props) {
         this.database = props.getDatabase().trim();
 
-        var cb = new Client.Builder()
-                .setUsername(props.getUsername()) // ✅ Always required
-                .compressServerResponse(true)
-                .setDefaultDatabase(props.getDatabase())
-                .setConnectTimeout(60_000)     // ⏱️ 30 seconds
-                .setSocketTimeout(60_000);        // ⏱️ 60 seconds
-
-        // ✅ Prefer JWT token if provided
         try {
+            var cb = new Client.Builder()
+                    .setUsername(props.getUsername())
+                    .compressServerResponse(true)
+                    .setDefaultDatabase(props.getDatabase())
+                    .setConnectTimeout(60_000)     // ⏱️ 30 seconds
+                    .setSocketTimeout(60_000);        // ⏱️ 60 seconds
+
             String host = props.getHost();
 
             if (props.getProtocol().equalsIgnoreCase("http")) {
@@ -71,6 +70,9 @@ public class ClickHouseService {
             } else {
                 throw new AuthenticationException("Invalid credentials or token.");
             }
+
+            if (!client.ping())
+                throw new AuthenticationException("Invalid credentials or token.");
         } catch (Exception e) {
             if (e instanceof AuthenticationException) {
                 throw (AuthenticationException) e;
@@ -109,6 +111,11 @@ public class ClickHouseService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to fetch data from ClickHouse: " + e.getMessage(), e);
         }
+    }
+
+    public long getTotalRows(String tableName) {
+        String query = "SELECT COUNT(*) FROM " + quote(tableName);
+        return Long.parseLong(getListFromResponse(query).getFirst());
     }
 
     public List<String> listTables() {
