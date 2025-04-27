@@ -228,9 +228,7 @@ public class ClickHouseService {
                 queryBuilder.append(" ")
                         .append(jt.getJoinType()).append(" ")
                         .append(quote(jt.getTableName())).append(" ON ")
-                        .append(quote(tableName)).append(".").append(quote(jt.getSourceColumn()))
-                        .append(" = ")
-                        .append(quote(jt.getTableName())).append(".").append(quote(jt.getTargetColumn()));
+                        .append(jt.getJoinCondition());
             }
         }
 

@@ -91,7 +91,7 @@ public class IngestionController {
             // Build response: first row is headers, remaining rows are data
             return getHeadAndData(rows);
         } catch (Exception e) {
-            throw new Exception("Failed to query selected columns.");
+            throw new IllegalArgumentException("Failed to query selected columns.");
         }
     }
 

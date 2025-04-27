@@ -3,8 +3,7 @@ package org.example.bidirectional.model;
 public class JoinTable {
     private String tableName;
     private String joinType;
-    private String sourceColumn;
-    private String targetColumn;
+    private String joinCondition;
 
     // Getters and Setters
     public String getTableName() {
@@ -23,19 +22,11 @@ public class JoinTable {
         this.joinType = joinType.toUpperCase();
     }
 
-    public String getSourceColumn() {
-        return sourceColumn;
+    public String getJoinCondition() {
+        return joinCondition;
     }
 
-    public void setSourceColumn(String sourceColumn) {
-        this.sourceColumn = sourceColumn;
-    }
-
-    public String getTargetColumn() {
-        return targetColumn;
-    }
-
-    public void setTargetColumn(String targetColumn) {
-        this.targetColumn = targetColumn;
+    public void setJoinCondition(String joinCondition) {
+        this.joinCondition = joinCondition;
     }
 }
