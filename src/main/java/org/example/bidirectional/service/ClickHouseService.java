@@ -216,6 +216,7 @@ public class ClickHouseService {
                 queryBuilder.append(".");
                 queryBuilder.append(quote(column[1]));
             } else {
+                queryBuilder.append(quote(tableName)).append('.');
                 queryBuilder.append(quote(columns.get(i)));
             }
 
