@@ -4,6 +4,12 @@ A full-stack ingestion platform built using **React + Vite** on the frontend and
 
 ---
 
+## 🎥 Demo Video
+
+A short demo video showcasing the project functionalities is available [here](https://drive.google.com/file/d/1s5fWTvmqq4y2pVGUMN3405I_Q4_0Ly1T/view?usp=sharing)
+
+---
+
 ## 🚀 Features
 
 - 🔁 **Bidirectional Ingestion**: Upload CSV files to ClickHouse or download CSV data from tables.
